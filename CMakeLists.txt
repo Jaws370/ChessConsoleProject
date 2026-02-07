@@ -6,10 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # add source files
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.hpp")
+set(SOURCES src/main.cpp src/board/Board.cpp)
 
 # create executable
 add_executable(ChessConsoleProject ${SOURCES})
+
+# include header files
+target_include_directories(ChessConsoleProject PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # copy assets to build directory if you have any
 add_custom_command(
