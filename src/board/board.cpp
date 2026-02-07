@@ -4,13 +4,34 @@
 #include <array>
 #include <bitset>
 
+Board::Board()
+{
+	bBoard.fill(0);
+}
+
 void Board::printBoard()
 {
-	std::cout << "hello world" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
+	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
+	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
 }
 
 void Board::updateBoard() {};
 
-std::array<std::bitset<8>, 8> Board::getPiece(int piece) {};
+sb Board::getPiece(int piece) {};
 
-std::bitset<8> Board::getBoardRow(int piece, int row) {};
+row Board::getRow(int piece, int row) {};

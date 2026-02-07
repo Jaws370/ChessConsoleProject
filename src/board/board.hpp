@@ -4,16 +4,21 @@
 #include <bitset>
 #include <array>
 
+using fb = std::array<std::bitset<64>, 12>;
+using sb = std::bitset<64>;
+using row = std::bitset<8>;
+
 class Board
 {
 public:
+	Board();
 	void printBoard();
 	void updateBoard();
 
 private:
-	std::array<std::bitset<8>, 8> getPiece(int piece);
-	std::bitset<8> getBoardRow(int piece, int row);
-	std::array<std::array<std::bitset<8>, 8>, 14> bBoard;
+	row getRow(int piece, int row);
+	sb getPiece(int piece);
+	fb bBoard;
 };
 
 #endif
