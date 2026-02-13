@@ -1,16 +1,17 @@
-#ifndef PIECE_HPP
-#define PIECE_HPP
+#pragma once
 
 #include <array>
 #include <bitset>
 
+using sb = std::bitset<64>;
+using fb = std::array<sb, 12>;
+
 class Piece
 {
 public:
-	static std::pair<bool, std::array<std::bitset<8>, 8>> move(const std::array<std::array<std::bitset<8>, 8>, 14> &bBoard, std::array<std::bitset<8>, 8> &currentPos, std::array<std::bitset<8>, 8> &futurePos);
-	static std::array<std::bitset<8>, 8> getMoves(std::array<std::bitset<8>, 8> &currentPos);
+	static std::pair<bool, sb> move(const fb &bBoard, const sb &currentPos, const sb &futurePos);
+	static sb getMoves(const fb &bBoard, sb &currentPos);
+	static int getBoardIndex(const fb &bBoard, const sb &currentPos);
 
 private:
 };
-
-#endif
