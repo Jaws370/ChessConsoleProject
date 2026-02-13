@@ -1,4 +1,5 @@
 bin
 assets
+cmake-build-debug
 
 .gitattributes
