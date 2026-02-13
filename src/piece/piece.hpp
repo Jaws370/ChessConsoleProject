@@ -10,8 +10,7 @@ class Piece
 {
 public:
 	static std::pair<bool, sb> move(const fb &bBoard, const sb &currentPos, const sb &futurePos);
-	static sb getMoves(const fb &bBoard, sb &currentPos);
+	static sb getValidMoves(const fb &bBoard, const sb &currentPos);
 	static int getBoardIndex(const fb &bBoard, const sb &currentPos);
-
-private:
+	static std::pair<std::bitset<4>, sb> edgeCheck(const sb &position);
 };
