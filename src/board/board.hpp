@@ -1,24 +1,18 @@
-#ifndef BOARD_HPP
-#define BOARD_HPP
+#pragma once
 
-#include <bitset>
 #include <array>
+#include <cstdint>
 
-using fb = std::array<std::bitset<64>, 12>;
-using sb = std::bitset<64>;
-using row = std::bitset<8>;
+using sb = uint64_t;
+using fb = std::array<sb, 12>;
 
-class Board
-{
+class Board {
 public:
 	Board();
 	void printBoard();
 	void updateBoard();
 
 private:
-	row getRow(int piece, int row);
 	sb getPiece(int piece);
 	fb bBoard;
 };
-
-#endif
