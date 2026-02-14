@@ -24,10 +24,32 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 	sb validMoves = 0;
 
 	switch (bIndex / 2) {
-		case 0: // pawn
+		case 0: {
+			// pawn
+			sb tempBoard = bIndex % 2 == 0 ? currentPos << 8 : currentPos >> 8;
+
+			const sb sColorBoard = getColorBoard(bBoard, bIndex % 2);
+			const sb dColorBoard = getColorBoard(bBoard, !(bIndex % 2));
+
+			// take left
+			if ((dColorBoard & tempBoard) << 1 != 0) { validMoves |= dColorBoard << 1; }
+
+			// take right
+			if ((dColorBoard & tempBoard) >> 1 != 0) { validMoves |= dColorBoard >> 1; }
+
+			// move forward
+			if ((tempBoard & (sColorBoard | dColorBoard)) == 0) {
+				validMoves |= tempBoard;
+
+				// move forward twice?
+				tempBoard = bIndex % 2 == 0 ? tempBoard << 8 : tempBoard >> 8;
+				if (bIndex % 2 && (currentPos & 0x00FF00000000000000ULL) != 0 || !(bIndex % 2) && (
+					    currentPos & 0x00000000000000FF00ULL) != 0) { validMoves |= tempBoard; }
+			}
+			break;
+		}
 		case 1: {
 			// bishop
-			// check position with edges
 			auto [edges, boundaries] = edgeCheck(currentPos);
 
 			uint8_t validDirections{0xF}; // MSB is tl, tr, br, bl
@@ -62,10 +84,11 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 			}
 			break;
 		}
-		case 2: // knight
+		case 2: {
+			// knight
+		}
 		case 3: {
 			// rook
-			// check position with edges
 			auto [edges, boundaries] = edgeCheck(currentPos);
 
 			uint8_t validDirections{0xF}; // MSB is l, t, r, b
@@ -102,7 +125,6 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 		}
 		case 4: {
 			// queen
-			// check position with edges
 			auto [edges, boundaries] = edgeCheck(currentPos);
 
 			uint8_t validDirections{0xFF}; // MSB is l, tl, t, tr, r, br, b, bl

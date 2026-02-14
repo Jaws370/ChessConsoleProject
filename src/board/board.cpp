@@ -4,13 +4,9 @@
 #include <array>
 #include <bitset>
 
-Board::Board()
-{
-	bBoard.fill(0);
-}
+Board::Board() { bBoard.fill(0); }
 
-void Board::printBoard()
-{
+void Board::printBoard() {
 	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
 	std::cout << "| a | a | a | a | a | a | a | a |" << std::endl;
 	std::cout << "+---+---+---+---+---+---+---+---+" << std::endl;
@@ -32,6 +28,4 @@ void Board::printBoard()
 
 void Board::updateBoard() {};
 
-sb Board::getPiece(int piece) {};
-
-row Board::getRow(int piece, int row) {};
+sb Board::getPiece(int piece) { return {}; };
