@@ -32,10 +32,10 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 			const sb dColorBoard = getColorBoard(bBoard, !(bIndex % 2));
 
 			// take left
-			if ((dColorBoard & tempBoard) << 1 != 0) { validMoves |= dColorBoard << 1; }
+			if ((dColorBoard & tempBoard) << 1 != 0) { validMoves |= (tempBoard << 1); }
 
 			// take right
-			if ((dColorBoard & tempBoard) >> 1 != 0) { validMoves |= dColorBoard >> 1; }
+			if ((dColorBoard & tempBoard) >> 1 != 0) { validMoves |= (tempBoard >> 1); }
 
 			// move forward
 			if ((tempBoard & (sColorBoard | dColorBoard)) == 0) {
