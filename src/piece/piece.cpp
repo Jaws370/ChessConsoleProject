@@ -299,7 +299,7 @@ int Piece::getBoardIndex(const fb &bBoard, const sb &currentPos) {
 	return -1;
 }
 
-std::pair<uint8_t, sb> Piece::edgeCheck(const sb &position, const std::array<sb, 4> &bEdges) {\
+std::pair<uint8_t, sb> Piece::edgeCheck(const sb &position, const std::array<sb, 4> &bEdges) {
 	uint8_t edges{0};
 	sb boundaries{0};
 
@@ -366,56 +366,326 @@ int Piece::boardToInt(sb board) {
 	return i;
 }
 
-void Piece::updatePieceData(const fb &bBoard, sb &wAttackBoard, sb &bAttackBoard,
+void Piece::updatePieceData(const fb &bBoard,
                             pb &wPieces, pb &bPieces,
-                            ob &whiteObervers, ob &blackObservers,
+                            ob &whiteObservers, ob &blackObservers,
                             const sb &prevPos, const sb &newPos) {
 	const int bIndex = getBoardIndex(bBoard, prevPos);
 
-	if (bIndex == -1) { std::cerr << "Invalid position sent to getValidMoves" << std::endl; }
+	if (bIndex == -1) { std::cerr << "Invalid position sent to updatePieceData" << std::endl; }
 
 	const bool color = bIndex % 2 == 0;
 
 	pb &sColorPieces = color ? wPieces : bPieces;
-	ob &sColorObservers = color ? whiteObervers : blackObservers;
+	ob &sColorObservers = color ? whiteObservers : blackObservers;
 	const int pIndex = getPieceIndexFromPosition(sColorPieces, prevPos);
 
 	if (sColorPieces[pIndex].isSlider) {
-		for (auto &vec: sColorObservers) {
-			vec.erase(
-				std::remove(vec.begin(), vec.end(), sColorPieces[pIndex].id), vec.end()
-			);
-		}
+		for (auto &vec: sColorObservers) { std::erase(vec, sColorPieces[pIndex].id); }
 	}
 
-	sColorPieces[pIndex].attacks = getAttacks(bBoard, newPos, true);
+	sColorPieces[pIndex].attacks = getAttacks(bBoard, newPos, sColorPieces[pIndex].id, sColorObservers);
 	sColorPieces[pIndex].position = newPos;
 
 	const int prevIndex = boardToInt(prevPos);
-	std::vector<uint8_t> idBuffer = whiteObervers[prevIndex];
-
-	for (uint8_t id: idBuffer) {
-		const int index = getPieceIndexFromId(wPieces, id);
-		wPieces[index].attacks = getAttacks(bBoard, wPieces[index].position, false);
-	}
-	idBuffer = blackObservers[prevIndex];
-
-	for (uint8_t id: idBuffer) {
-		const int index = getPieceIndexFromId(bPieces, id);
-		bPieces[index].attacks = getAttacks(bBoard, bPieces[index].position, false);
-	}
+	updatePieceAttacks(bBoard, wPieces, whiteObservers[prevIndex], whiteObservers);
+	updatePieceAttacks(bBoard, bPieces, blackObservers[prevIndex], blackObservers);
 
 	const int newIndex = boardToInt(newPos);
-	idBuffer = blackObservers[newIndex];
+	updatePieceAttacks(bBoard, wPieces, whiteObservers[newIndex], whiteObservers);
+	updatePieceAttacks(bBoard, bPieces, blackObservers[newIndex], blackObservers);
+}
 
-	for (uint8_t id: idBuffer) {
-		const int index = getPieceIndexFromId(bPieces, id);
-		bPieces[index].attacks = getAttacks(bBoard, bPieces[index].position, false);
+void Piece::updatePieceAttacks(const fb &bBoard, pb &pieces, const std::vector<uint8_t> &observers,
+                               ob &sColorObservers) {
+	for (uint8_t id: observers) {
+		const int index = getPieceIndexFromId(pieces, id);
+		pieces[index].attacks = getAttacks(bBoard, pieces[index].position, id, sColorObservers);
 	}
-	idBuffer = whiteObervers[newIndex];
+}
 
-	for (uint8_t id: idBuffer) {
-		const int index = getPieceIndexFromId(wPieces, id);
-		wPieces[index].attacks = getAttacks(bBoard, wPieces[index].position, false);
+sb Piece::getAttacks(const fb &bBoard, const sb &currentPos, const uint8_t &pieceId, ob &oBoard) {
+	const int bIndex = getBoardIndex(bBoard, currentPos);
+	if (bIndex == -1) { std::cerr << "Invalid position sent to getValidMoves" << std::endl; }
+
+	sb attacks{0};
+
+	switch (bIndex / 2) {
+		case 0: {
+			const sb tempBoard = bIndex % 2 == 0 ? currentPos << 8 : currentPos >> 8;
+
+			// take left
+			attacks |= (tempBoard << 1);
+			// take right
+			attacks |= (tempBoard >> 1);
+
+			break;
+		} // pawn
+		case 1: {
+			constexpr std::array<sb, 4> bEdges{
+				0xFF00000000000000ULL, // top
+				0x0101010101010101ULL, // right
+				0x00000000000000FFULL, // bottom
+				0x8080808080808080ULL // left
+			};
+			auto [edges, boundaries] = edgeCheck(currentPos, bEdges);
+
+			uint8_t validDirections{0xF}; // MSB is tl, tr, br, bl
+
+			// top edge
+			if ((0x8 & edges) == 0) {
+				validDirections &= ~0xC; // tl, tr
+			}
+
+			// right edge
+			if ((0x4 & edges) == 0) {
+				validDirections &= ~0x6; // tr, br
+			}
+
+			// bottom edge
+			if ((0x2 & edges) == 0) {
+				validDirections &= ~0x3; // bl, br
+			}
+
+			// left edge
+			if ((0x1 & edges) == 0) {
+				validDirections &= ~0x9; // tl, bl
+			}
+
+			for (int i = 0; i < 2; i++) {
+				for (int j = 0; j < 2; j++) {
+					if ((validDirections & (0x8 >> ((i * 2) + j))) != 0) {
+						constexpr std::array<int, 2> directions{9, 7};
+						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2,
+						                              oBoard, pieceId);
+					}
+				}
+			}
+			break;
+		} // bishop
+		case 2: {
+			constexpr std::array<sb, 4> iBEdges{
+				0xFFFF000000000000ULL, // top
+				0x0303030303030303ULL, // right
+				0x000000000000FFFFULL, // bottom
+				0xC0C0C0C0C0C0C0C0ULL // left
+			};
+
+			auto [iEdges, iBoundaries] = edgeCheck(currentPos, iBEdges);
+
+			constexpr std::array<sb, 4> oBEdges{
+				0xFF00000000000000ULL, // top
+				0x0101010101010101ULL, // right
+				0x00000000000000FFULL, // bottom
+				0x8080808080808080ULL // left
+			};
+
+			auto [oEdges, oBoundaries] = edgeCheck(currentPos, oBEdges);
+
+			uint8_t validDirections{0xFF}; // MSB is lr, ll, tr, tl, lll, llr, bl, br
+
+			// top edge
+			if ((0x8 & oEdges) == 0) {
+				validDirections &= ~0xF0; // lr ll tr tl
+			} else if ((0x8 & iEdges) == 0) {
+				validDirections &= ~0x30; // tr tl
+			}
+
+			// right edge
+			if ((0x4 & oEdges) == 0) {
+				validDirections &= ~0xA5; // lr tr llr br
+			} else if ((0x4 & iEdges) == 0) {
+				validDirections &= ~0x84; // lr, llr
+			}
+
+			// bottom edge
+			if ((0x2 & oEdges) == 0) {
+				validDirections &= ~0xF; // lll, llr, bl, br
+			} else if ((0x2 & iEdges) == 0) {
+				validDirections &= ~0x3; // bl, br
+			}
+
+			// left edge
+			if ((0x1 & oEdges) == 0) {
+				validDirections &= ~0x5A; // ll, tl, lll, bl
+			} else if ((0x1 & iEdges) == 0) {
+				validDirections &= ~0x48; // ll, lll
+			}
+
+			for (int i = 0; i < 2; i++) {
+				for (int j = 0; j < 4; j++) {
+					if ((validDirections & (0x80 >> ((i * 4) + j))) != 0) {
+						constexpr std::array<int, 4> directions{6, 10, 15, 17};
+
+						attacks |= i == 0 ? currentPos << directions[j] : currentPos >> directions[j];
+					}
+				}
+			}
+
+			break;
+		} // knight
+		case 3: {
+			constexpr std::array<sb, 4> bEdges{
+				0xFF00000000000000ULL, // top
+				0x0101010101010101ULL, // right
+				0x00000000000000FFULL, // bottom
+				0x8080808080808080ULL // left
+			};
+
+			auto [edges, boundaries] = edgeCheck(currentPos, bEdges);
+
+			uint8_t validDirections{0xF}; // MSB is l, t, r, b
+
+			// top edge
+			if ((0x8 & edges) == 0) {
+				validDirections &= ~0x4; // t
+			}
+
+			// right edge
+			if ((0x4 & edges) == 0) {
+				validDirections &= ~0x2; // r
+			}
+
+			// bottom edge
+			if ((0x2 & edges) == 0) {
+				validDirections &= ~0x1; // b
+			}
+
+			// left edge
+			if ((0x1 & edges) == 0) {
+				validDirections &= ~0x8; // l
+			}
+
+			for (int i = 0; i < 2; i++) {
+				for (int j = 0; j < 2; j++) {
+					if ((validDirections & (0x8 >> ((i * 2) + j))) != 0) {
+						constexpr std::array<int, 2> directions{1, 8};
+						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2,
+						                              oBoard, pieceId);
+					}
+				}
+			}
+			break;
+		} // rook
+		case 4: {
+			constexpr std::array<sb, 4> bEdges{
+				0xFF00000000000000ULL, // top
+				0x0101010101010101ULL, // right
+				0x00000000000000FFULL, // bottom
+				0x8080808080808080ULL // left
+			};
+
+			auto [edges, boundaries] = edgeCheck(currentPos, bEdges);
+
+			uint8_t validDirections{0xFF}; // MSB is r, tr, t, tl, l, bl, b, br
+
+			// top edge
+			if ((0x8 & edges) == 0) {
+				validDirections &= ~0x70; // tl, t, tr
+			}
+
+			// right edge
+			if ((0x4 & edges) == 0) {
+				validDirections &= ~0xC1; // tr, r, br
+			}
+
+			// bottom edge
+			if ((0x2 & edges) == 0) {
+				validDirections &= ~0x7; // br, b, bl
+			}
+
+			// left edge
+			if ((0x1 & edges) == 0) {
+				validDirections &= ~0x1C; // bl, l, tl
+			}
+
+			for (int i = 0; i < 2; i++) {
+				for (int j = 0; j < 4; j++) {
+					if ((validDirections & (0x80 >> ((i * 4) + j))) != 0) {
+						constexpr std::array<int, 4> directions{1, 9, 8, 7};
+						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2,
+						                              oBoard, pieceId);
+					}
+				}
+			}
+
+			break;
+		} // queen
+		case 5: {
+			constexpr std::array<sb, 4> bEdges{
+				0xFF00000000000000ULL, // top
+				0x0101010101010101ULL, // right
+				0x00000000000000FFULL, // bottom
+				0x8080808080808080ULL // left
+			};
+
+			auto [edges, boundaries] = edgeCheck(currentPos, bEdges);
+
+			uint8_t validDirections{0xFF}; // MSB is r, tr, t, tl, l, bl, b, br
+
+			// top edge
+			if ((0x8 & edges) == 0) {
+				validDirections &= ~0x70; // tl, t, tr
+			}
+
+			// right edge
+			if ((0x4 & edges) == 0) {
+				validDirections &= ~0xC1; // tr, r, br
+			}
+
+			// bottom edge
+			if ((0x2 & edges) == 0) {
+				validDirections &= ~0x7; // br, b, bl
+			}
+
+			// left edge
+			if ((0x1 & edges) == 0) {
+				validDirections &= ~0x1C; // bl, l, tl
+			}
+
+			for (int i = 0; i < 2; i++) {
+				for (int j = 0; j < 4; j++) {
+					if ((validDirections & (0x80 >> ((i * 4) + j))) != 0) {
+						constexpr std::array<int, 4> directions{1, 9, 8, 7};
+
+						attacks |= i == 0 ? currentPos << directions[j] : currentPos >> directions[j];
+					}
+				}
+			}
+
+			break;
+		} // king
+		default:
+			break;
 	}
+
+	return attacks;
+}
+
+sb Piece::getAttackDirection(const fb &bBoard, const sb &boundaries, const sb &currentPos, const int &shift,
+                             const bool &direction, const bool &color, ob &oBoard, const uint8_t &pieceId) {
+	sb outBoard{0};
+	sb tempBoard{currentPos};
+
+	const sb fBoard{getColorBoard(bBoard, color) | getColorBoard(bBoard, !color)};
+
+	bool hasSeenPiece = false;
+
+	for (int i = 0; i < 8; i++) {
+		tempBoard = direction ? tempBoard << shift : tempBoard >> shift;
+
+		if (!hasSeenPiece) { outBoard |= tempBoard; }
+
+		oBoard[boardToInt(tempBoard)].push_back(pieceId);
+
+		if ((tempBoard & fBoard) != 0) {
+			if (hasSeenPiece) { return outBoard; }
+			hasSeenPiece = true;
+			continue;
+		}
+
+		if ((tempBoard & boundaries) != 0) { return outBoard; }
+	}
+
+	return outBoard;
 }

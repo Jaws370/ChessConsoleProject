@@ -32,12 +32,14 @@ public:
 	static int getPieceIndexFromPosition(const pb &dPieces, const sb &currentPos)
 	static int getPieceIndexFromId(const pb &dPieces, const uint8_t &id);
 	static int boardToInt(sb board);
-	static void updatePieceData(const fb &bBoard, sb &wAttackBoard, sb &bAttackBoard,
+	static void updatePieceData(const fb &bBoard,
 	                            pb &wPieces, pb &bPieces,
-	                            ob &whiteObervers, ob &blackObservers,
+	                            ob &whiteObservers, ob &blackObservers,
 	                            const sb &prevPos, const sb &newPos);
+	static void updatePieceAttacks(const fb &bBoard, pb &pieces, const std::vector<uint8_t> &observers,
+	                               ob &sColorObservers);
 	static void updateAttackBoards();
-	static sb getAttacks(const fb &bBoard, const sb &currentPos, const bool &isObservingNew);
+	static sb getAttacks(const fb &bBoard, const sb &currentPos, const uint8_t &pieceId, ob &oBoard);
 	static sb getAttackDirection(const fb &bBoard, const sb &boundaries, const sb &currentPos, const int &shift,
-	                             const bool &direction, const bool &color);
+	                             const bool &direction, const bool &color, ob &oBoard, const uint8_t &pieceId);
 };
