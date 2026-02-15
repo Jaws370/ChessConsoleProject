@@ -15,8 +15,28 @@ struct PieceData {
 	bool isSlider;
 };
 
+template<size_t N>
+using lb = std::array<std::array<sb, N>, 64>;
+
+struct LookupTables {
+	// N value is the number of arms for sliders... lt[0] will be left, then it continues clockwise
+	lb<4> bishopLookupTable;
+	lb<1> knightLookupTable;
+	lb<4> rookLookupTable;
+	lb<8> queenLookupTable;
+	lb<1> kingLookupTable;
+};
+
 using pb = std::array<PieceData, 16>;
 using ob = std::array<std::vector<uint8_t>, 64>;
+
+struct GameData {
+	fb board;
+	pb whitePieces;
+	pb blackPieces;
+	ob whiteObservers;
+	ob blackObservers;
+};
 
 class Piece {
 public:
@@ -28,6 +48,10 @@ public:
 	static std::pair<uint8_t, sb> edgeCheck(const sb &position, const std::array<sb, 4> &bEdges);
 	static int getBoardIndex(const fb &bBoard, const sb &currentPos);
 	static sb getColorBoard(const fb &bBoard, const bool &color);
+
+	template<size_t N>
+	static void calculateSliderMoves(const fb &bBoard, const int bIndex, sb &possibleMoves, sb &possibleAttacks,
+	                                 sb &possibleObservers, const sb &currentPos, const lt<N> &table);
 
 	static int getPieceIndexFromPosition(const pb &dPieces, const sb &currentPos)
 	static int getPieceIndexFromId(const pb &dPieces, const uint8_t &id);

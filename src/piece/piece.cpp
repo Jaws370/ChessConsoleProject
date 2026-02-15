@@ -1,23 +1,234 @@
 #include "Piece.hpp"
 
 #include <algorithm>
-#include <cstdint>
+#include <future>
 #include <iostream>
 #include <vector>
 
-std::pair<bool, sb> Piece::move(const fb &bBoard, const sb &currentPos, const sb &futurePos) {
-	const int bIndex = getBoardIndex(bBoard, currentPos);
+/**
+ * Attempts to move a chess piece from the current position to a future position on the board.
+ * This method performs validation on the move, updates game data accordingly, and handles
+ * the logic for moves, attacks, and observers based on the type of piece.
+ *
+ * @param gd The current game data, including the board state and piece information.
+ * @param currentPos The current position of the piece represented as a bitboard.
+ * @param futurePos The desired future position of the piece represented as a bitboard.
+ * @param lt The lookup tables providing precomputed data for various piece movements.
+ * @return `true` if the move is successfully completed; `false` if the move is invalid.
+ */
+bool Piece::move(GameData &gd, const sb &currentPos, const sb &futurePos, LookupTables lt) {
+	// get the piece's board index
+	const int bIndex = getBoardIndex(gd.board, currentPos);
 
+	// return error if invalid position
 	if (bIndex == -1) {
 		std::cerr << "Invalid position sent to move" << std::endl;
-		return {false, {}};
+		return {false};
 	}
 
-	if (const sb validMoves = getValidMoves(bBoard, currentPos); (futurePos & validMoves) == 0) { return {false, {}}; }
+	// boards for the possible moves, attacks, and observers
+	sb possibleMoves = 0;
+	sb possibleAttacks = 0;
+	sb possibleObservers = 0;
 
-	return {true, (bBoard[bIndex] & ~currentPos) | futurePos};
+	// get the moves, attacks, and observers for each piece
+	lb table = 0;
+	switch (bIndex / 2) {
+		case 0: {
+			// move forward one
+			sb tempBoard = bIndex % 2 == 0 ? currentPos << 8 : currentPos >> 8;
+			const sb sColorBoard = getColorBoard(gd.board, bIndex % 2);
+			const sb dColorBoard = getColorBoard(gd.board, !(bIndex % 2));
+
+			// check take left and add to attacks
+			if ((dColorBoard & (tempBoard << 1)) != 0) { possibleMoves |= (tempBoard << 1); }
+			possibleAttacks |= (tempBoard << 1);
+
+			// check take right and add to attacks
+			if ((dColorBoard & (tempBoard >> 1)) != 0) { possibleMoves |= (tempBoard >> 1); }
+			possibleAttacks |= (tempBoard >> 1);
+
+			// check move forwards
+			if ((tempBoard & (sColorBoard | dColorBoard)) == 0) {
+				possibleMoves |= tempBoard;
+
+				// check double move forwards
+				tempBoard = bIndex % 2 == 0 ? tempBoard << 8 : tempBoard >> 8;
+				if (((bIndex % 2 && (currentPos & 0x00FF000000000000ULL) != 0) ||
+				     (!(bIndex % 2) && (currentPos & 0x000000000000FF00ULL) != 0)) && (
+					    tempBoard & (sColorBoard | dColorBoard)) == 0) { possibleMoves |= tempBoard; }
+			}
+			goto end;
+		} // pawn
+		case 1: {
+			table = lt.bishopLookupTable;
+			goto slider;
+		} // bishop
+		case 2: {
+			table = lt.knightLookupTable;
+			goto nonSlider;
+		} // knight
+		case 3: {
+			table = lt.rookLookupTable;
+			goto slider;
+		} // rook
+		case 4: {
+			table = lt.queenLookupTable;
+			goto slider;
+		} // queen
+		case 5: {
+			table = lt.kingLookupTable;
+			goto nonSlider;
+		} // king
+
+		default: {
+			std::cerr << "Invalid piece sent to makeMove" << std::endl;
+			return false;
+		} // invalid piece
+	}
+
+slider: {
+		// send data and lookuptables to calculateSliderMoves()
+		calculateSliderMoves(gd.board, bIndex, possibleMoves, possibleAttacks, possibleObservers, currentPos, table);
+		goto end;
+	}
+
+nonSlider: {
+		// get the board of the piece and then use it to update attacks and moves
+		const sb sColorBoard = getColorBoard(gd.board, bIndex % 2);
+
+		possibleAttacks |= table[boardToInt(currentPos)][0];
+		possibleMoves |= (table[boardToInt(currentPos)][0] & ~(sColorBoard));
+	}
+
+end:
+	// return false if the move is invalid
+	if ((possibleMoves & futurePos) != 0) { return {false}; }
+
+	pb &sColorPieces = bIndex % 2 ? gd.whitePieces : gd.blackPieces;
+	ob &sColorObservers = bIndex % 2 ? gd.whiteObservers : gd.blackObservers;
+	const int pIndex = getPieceIndexFromPosition(sColorPieces, currentPos);
+
+	// update position and attacks of the piece
+	sColorPieces[pIndex].position = futurePos;
+	sColorPieces[pIndex].attacks = possibleAttacks;
+
+	// observer stuff for sliders
+	if (sColorPieces[pIndex].isSlider) {
+		for (auto &vec: sColorObservers) { std::erase(vec, sColorPieces[pIndex].id); }
+
+		while (possibleObservers != 0) {
+			const int observerIndex = __builtin_ctzll(possibleObservers);
+
+			sColorObservers[observerIndex].push_back(sColorPieces[pIndex].id);
+
+			possibleObservers &= ~(0x1ULL << observerIndex);
+		}
+	}
+
+	// update sliders observing currentPos
+	const int prevIndex = boardToInt(currentPos);
+	updatePieceAttacks(gd.board, gd.whitePieces, gd.whiteObservers[prevIndex], gd.whiteObservers);
+	updatePieceAttacks(gd.board, gd.blackPieces, gd.blackObservers[prevIndex], gd.blackObservers);
+
+	// update sliders observing futurePos
+	const int newIndex = boardToInt(futurePos);
+	updatePieceAttacks(gd.board, gd.whitePieces, gd.whiteObservers[newIndex], gd.whiteObservers);
+	updatePieceAttacks(gd.board, gd.blackPieces, gd.blackObservers[newIndex], gd.blackObservers);
+
+	// update bBoard
+	gd.board[bIndex] = (gd.board[bIndex] & ~currentPos) | futurePos;
+
+	// return result
+	return {true};
 }
 
+/**
+ * Calculates the moves for the slider pieces
+ *
+ * @tparam N size n of the input lookuptable
+ * @param bBoard the current board of the game
+ * @param bIndex index of the board being edited
+ * @param possibleMoves variable containing the possible moves
+ * @param possibleAttacks variable containing the possible attacks
+ * @param possibleObservers variable containing the possible observers
+ * @param currentPos the current board position
+ * @param table the lookuptable for this piece
+ */
+template<size_t N>
+void Piece::calculateSliderMoves(const fb &bBoard, const int bIndex, sb &possibleMoves, sb &possibleAttacks,
+                                 sb &possibleObservers, const sb &currentPos, const lb<N> &table) {
+	const sb sColorBoard = getColorBoard(bBoard, bIndex % 2);
+	const sb dColorBoard = getColorBoard(bBoard, !(bIndex % 2));
+
+	// go through each arm
+	for (auto arm: table[boardToInt(currentPos)]) {
+		// calculate the hits on the arm
+		sb hits = (sColorBoard | dColorBoard) & arm;
+
+		// return full arm if no hits
+		if (hits == 0) {
+			possibleMoves |= arm;
+			possibleAttacks |= arm;
+			possibleObservers |= arm;
+			continue;
+		}
+
+		int sigBitIndex = 0;
+
+		sb hitMask = 0;
+		sb hitlessMask = 0;
+
+		// get msb or lsb and build masks
+		if (arm > currentPos) {
+			sigBitIndex = __builtin_ctzll(hits);
+
+			hitlessMask = ((0x1ULL << sigBitIndex) - 1); // mask removing hit
+			hitMask = ((0x1ULL << (sigBitIndex + 1)) - 1); // mask keeping hit
+		} else {
+			sigBitIndex = 63 - __builtin_clzll(hits);
+
+			hitlessMask = ~((0x1ULL << (sigBitIndex + 1)) - 1); // mask removing hit
+			hitMask = ~((0x1ULL << sigBitIndex) - 1); // mask keeping hit
+		}
+
+		// make moves be hitless if hit piece is same color
+		if ((hitMask & sColorBoard) != 0) { possibleMoves |= (arm & hitlessMask); } else {
+			possibleMoves |= (arm & hitMask);
+		}
+
+		// add arm to attacks with the hit
+		possibleAttacks |= (arm & hitMask);
+
+
+		// second hits for observers and x-ray attacks
+		hits = (hits & ~(0x1ULL << sigBitIndex));
+
+		// if the second check doesn't hit
+		if (hits == 0) {
+			possibleObservers |= arm;
+			continue;
+		}
+
+		hitMask = 0;
+
+		// get msb and lsb for the second hit
+		if (arm > currentPos) {
+			sigBitIndex = __builtin_ctzll(hits);
+			hitMask = ((0x1ULL << (sigBitIndex + 1)) - 1); // mask keeping hit
+		} else {
+			sigBitIndex = 63 - __builtin_clzll(hits);
+			hitMask = ~((0x1ULL << sigBitIndex) - 1); // mask keeping hit
+		}
+
+		// update observers
+		possibleObservers |= (arm & hitMask);
+	}
+}
+
+// precalculatedMove
+
+// still need for AI
 sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 	const int bIndex = getBoardIndex(bBoard, currentPos);
 
@@ -84,7 +295,8 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 				for (int j = 0; j < 2; j++) {
 					if ((validDirections & (0x8 >> ((i * 2) + j))) != 0) {
 						constexpr std::array<int, 2> directions{9, 7};
-						validMoves |= getDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2);
+						validMoves |= getDirection(bBoard, boundaries, currentPos, directions[j], i == 0,
+						                           bIndex % 2);
 					}
 				}
 			}
@@ -190,7 +402,8 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 				for (int j = 0; j < 2; j++) {
 					if ((validDirections & (0x8 >> ((i * 2) + j))) != 0) {
 						constexpr std::array<int, 2> directions{1, 8};
-						validMoves |= getDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2);
+						validMoves |= getDirection(bBoard, boundaries, currentPos, directions[j], i == 0,
+						                           bIndex % 2);
 					}
 				}
 			}
@@ -232,7 +445,8 @@ sb Piece::getValidMoves(const fb &bBoard, const sb &currentPos) {
 				for (int j = 0; j < 4; j++) {
 					if ((validDirections & (0x80 >> ((i * 4) + j))) != 0) {
 						constexpr std::array<int, 4> directions{1, 9, 8, 7};
-						validMoves |= getDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2);
+						validMoves |= getDirection(bBoard, boundaries, currentPos, directions[j], i == 0,
+						                           bIndex % 2);
 					}
 				}
 			}
@@ -456,7 +670,8 @@ sb Piece::getAttacks(const fb &bBoard, const sb &currentPos, const uint8_t &piec
 				for (int j = 0; j < 2; j++) {
 					if ((validDirections & (0x8 >> ((i * 2) + j))) != 0) {
 						constexpr std::array<int, 2> directions{9, 7};
-						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2,
+						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0,
+						                              bIndex % 2,
 						                              oBoard, pieceId);
 					}
 				}
@@ -560,7 +775,8 @@ sb Piece::getAttacks(const fb &bBoard, const sb &currentPos, const uint8_t &piec
 				for (int j = 0; j < 2; j++) {
 					if ((validDirections & (0x8 >> ((i * 2) + j))) != 0) {
 						constexpr std::array<int, 2> directions{1, 8};
-						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2,
+						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0,
+						                              bIndex % 2,
 						                              oBoard, pieceId);
 					}
 				}
@@ -603,7 +819,8 @@ sb Piece::getAttacks(const fb &bBoard, const sb &currentPos, const uint8_t &piec
 				for (int j = 0; j < 4; j++) {
 					if ((validDirections & (0x80 >> ((i * 4) + j))) != 0) {
 						constexpr std::array<int, 4> directions{1, 9, 8, 7};
-						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0, bIndex % 2,
+						attacks |= getAttackDirection(bBoard, boundaries, currentPos, directions[j], i == 0,
+						                              bIndex % 2,
 						                              oBoard, pieceId);
 					}
 				}
