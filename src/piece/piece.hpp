@@ -19,7 +19,7 @@ template<size_t N>
 using lb = std::array<std::array<sb, N>, 64>;
 
 struct LookupTables {
-	// N value is the number of arms for sliders... lt[0] will be left, then it continues clockwise
+	// N value is the number of arms for sliders... lb[0] will be left, then it continues clockwise
 	lb<4> bishopLookupTable;
 	lb<1> knightLookupTable;
 	lb<4> rookLookupTable;
@@ -47,39 +47,29 @@ enum class PieceType : int {
 	KING = 5
 };
 
-enum class Color : int { BLACK = 0, WHITE = 1; };
+enum class Color : int { BLACK = 0, WHITE = 1 };
 
 class Piece {
 public:
-	static void move(GameData &gd, const sb &prevPos, const sb &futurePos, const LookupTables &lt);
-	static sb getValidMoves(const fb &bBoard, const sb &currentPos);
-	static sb getDirection(const fb &bBoard, const sb &boundaries, const sb &currentPos, const int &shift,
-	                       const bool &direction, const bool &color);
-
 	static bool isMoveValid(const GameData &gd, const sb &currentPos, const sb &futurePos);
+	static void move(GameData &gd, const sb &prevPos, const sb &newPos, const LookupTables &lt);
 
-	static std::pair<uint8_t, sb> edgeCheck(const sb &position, const std::array<sb, 4> &bEdges);
+	template<size_t N>
+	static void calculateSliderMoves(GameData &gd, PieceData &piece, const sb &pos, const int &bIndex,
+	                                 const lb<N> &table);
+
+	static void updateAtksAndObsvrs(GameData &gd, const sb &pos, PieceData &piece, const int &bIndex,
+	                                const PieceType &pieceType, const LookupTables &lt);
+	static void updateObservering(GameData &gd, const int &observingIndex, const int &bIndex,
+	                              const LookupTables &lt);
+
 	static int getBoardIndex(const fb &bBoard, const sb &currentPos);
 	static sb getColorBoard(const fb &bBoard, const bool &color);
 
-	template<size_t N>
-	static void calculateSliderMoves(GameData &gd, PieceData &piece, const sb &currentPos, const int &bIndex,
-	                                 const lb<N> &table);
-
-	static int getPieceIndexFromPosition(const pb &dPieces, const sb &currentPos)
-	static int getPieceIndexFromId(const pb &dPieces, const uint8_t &id);
-	static int boardToInt(sb board);
-	static void updatePieceData(const fb &bBoard,
-	                            pb &wPieces, pb &bPieces,
-	                            ob &whiteObservers, ob &blackObservers,
-	                            const sb &prevPos, const sb &newPos);
-	static void updatePieceAttacks(const fb &bBoard, pb &pieces, const std::vector<uint8_t> &observers,
-	                               ob &sColorObservers);
-	static void updateAttackBoards();
-	static sb getAttacks(const fb &bBoard, const sb &currentPos, const uint8_t &pieceId, ob &oBoard);
-	static sb getAttackDirection(const fb &bBoard, const sb &boundaries, const sb &currentPos, const int &shift,
-	                             const bool &direction, const bool &color, ob &oBoard, const uint8_t &pieceId);
+	static int getPieceIndex(const pb &dPieces, const sb &currentPos);
+	static int getPieceIndex(const pb &dPieces, const uint8_t &id);
 
 	static inline PieceType getPieceType(const int bIndex) { return static_cast<PieceType>(bIndex / 2); }
 	static inline Color getColor(const int bIndex) { return static_cast<Color>(bIndex % 2); }
+	static inline int boardToInt(const sb board) { return __builtin_ctzll(board); }
 };
