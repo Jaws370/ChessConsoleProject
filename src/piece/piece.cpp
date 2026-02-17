@@ -1,37 +1,27 @@
 #include "Piece.hpp"
 
 #include <algorithm>
-#include <future>
 #include <iostream>
-#include <vector>
 
 bool Piece::isMoveValid(const GameData &gd, const sb &currentPos, const sb &futurePos) {
-	const int bIndex = getBoardIndex(gd.board, currentPos);
+	const Color pieceColor = getColor(gd.whiteBoard, currentPos);
 
-	if (bIndex == -1) {
-		std::cerr << "Invalid position sent to isMoveValid" << std::endl;
-		return false;
-	}
+	const sb &sColorBoard = pieceColor == Color::WHITE ? gd.whiteBoard : gd.blackBoard;
+	const pb &sColorPieces = pieceColor == Color::WHITE ? gd.whitePieces : gd.blackPieces;
 
-	const Color pieceColor = getColor(bIndex);
+	const int pIndex = gd.pieceLookup[boardToInt(currentPos)];
 
-	const sb &sColorBoard = getColorBoard(gd.board, bIndex % 2);
-	const pb &sColorPieces = (pieceColor == Color::WHITE) ? gd.whitePieces : gd.blackPieces;
-	const int pIndex = getPieceIndex(sColorPieces, currentPos);
-
-	if (pIndex == -1) {
+	if (pIndex == 255) {
 		std::cerr << "Invalid piece sent to isMoveValid" << std::endl;
 		return false;
 	}
 
-	const PieceData pieceData = sColorPieces[pIndex];
+	const PieceData piece = sColorPieces[pIndex];
 
 	// check for the pawn
-	const auto pieceType = getPieceType(bIndex);
-
-	if (pieceType == PieceType::PAWN) {
+	if (piece.type == PieceType::PAWN) {
 		sb tempBoard = (pieceColor == Color::WHITE) ? currentPos << 8 : currentPos >> 8;
-		const sb dColorBoard = getColorBoard(gd.board, !(bIndex % 2));
+		const sb dColorBoard = pieceColor == Color::BLACK ? gd.whiteBoard : gd.blackBoard;
 
 		// check take left
 		if ((dColorBoard & (tempBoard << 1)) & futurePos) { return true; }
@@ -59,69 +49,79 @@ bool Piece::isMoveValid(const GameData &gd, const sb &currentPos, const sb &futu
 	}
 
 	// check for non-pawn
-	if (futurePos & (pieceData.attacks & ~(sColorBoard))) { return true; }
+	if (futurePos & (piece.attacks & ~(sColorBoard))) { return true; }
 
 	return false;
 }
 
 // assumes the move has already been validated
 void Piece::move(GameData &gd, const sb &prevPos, const sb &newPos, const LookupTables &lt) {
-	const int bIndex = getBoardIndex(gd.board, prevPos);
-
-	// return error if invalid position
-	if (bIndex == -1) {
-		std::cerr << "Invalid position sent to move" << std::endl;
-		return;
-	}
-
-	const Color pieceColor = getColor(prevPos);
+	const Color pieceColor = getColor(gd.whiteBoard, prevPos);
 
 	pb &sColorPieces = (pieceColor == Color::WHITE) ? gd.whitePieces : gd.blackPieces;
 	ob &sColorObservers = (pieceColor == Color::WHITE) ? gd.whiteObservers : gd.blackObservers;
-	const int pIndex = getPieceIndex(sColorPieces, prevPos);
+
+	const int pIndex = gd.pieceLookup[boardToInt(prevPos)];
 
 	// return error if invalid piece
-	if (pIndex == -1) {
+	if (pIndex == 255) {
 		std::cerr << "Invalid piece sent to move" << std::endl;
 		return;
 	}
 
-	// get the piece
+	// get the piece and board index
 	PieceData &piece{sColorPieces[pIndex]};
+	const int bIndex = piece.boardIndex;
+
+	// return error if invalid board
+	if (bIndex == -1) {
+		std::cerr << "Invalid board index sent to move" << std::endl;
+		return;
+	}
 
 	// remove piece's observers
-	if (piece.isSlider) { for (auto &vec: sColorObservers) { std::erase(vec, piece.id); } } // very slow
+	while (piece.observing) {
+		const int observerIndex = __builtin_ctzll(piece.observing);
+		sColorObservers[observerIndex].remove(piece.id);
+		piece.observing &= ~(0x1ULL << observerIndex);
+	}
 
 	// update position of the piece
 	piece.position = newPos;
 
-	// update bBoard
-	gd.board[bIndex] = (gd.board[bIndex] & ~prevPos) | newPos;
+	// update piece lookup
+	gd.pieceLookup[boardToInt(prevPos)] = 255;
+	gd.pieceLookup[boardToInt(newPos)] = pIndex;
+
+	// update color board
+	if (pieceColor == Color::WHITE) {
+		gd.whiteBoard &= ~(prevPos);
+		gd.whiteBoard |= newPos;
+	} else {
+		gd.blackBoard &= ~(prevPos);
+		gd.blackBoard |= newPos;
+	}
 
 	// reset piece's attacks
 	piece.attacks = 0;
 
-	// get the attacks and observers for each piece
-	const PieceType pieceType = getPieceType(bIndex);
-
 	// update attacks and observers of the moved piece
-	updateAtksAndObsvrs(gd, prevPos, piece, bIndex, pieceType, lt);
+	updateAtksAndObsvrs(gd, piece, lt);
 
 	// update sliders observing prevPos
 	const int prevIndex = boardToInt(prevPos);
-	updateObservering(gd, prevIndex, bIndex, lt);
+	updateObservering(gd, prevIndex, lt);
 
 	// update sliders observing newPos
 	const int newIndex = boardToInt(newPos);
-	updateObservering(gd, newIndex, bIndex, lt);
+	updateObservering(gd, newIndex, lt);
 }
 
-void Piece::updateAtksAndObsvrs(GameData &gd, const sb &pos, PieceData &piece, const int &bIndex,
-                                const PieceType &pieceType, const LookupTables &lt) {
-	switch (pieceType) {
+void Piece::updateAtksAndObsvrs(GameData &gd, PieceData &piece, const LookupTables &lt) {
+	switch (piece.type) {
 		case PieceType::PAWN: {
 			// move forward one
-			const sb tempBoard = bIndex % 2 == 0 ? pos >> 8 : pos << 8;
+			const sb tempBoard = piece.color == Color::WHITE ? piece.position << 8 : piece.position >> 8;
 
 			// add take left to attacks
 			piece.attacks |= (tempBoard << 1);
@@ -132,23 +132,23 @@ void Piece::updateAtksAndObsvrs(GameData &gd, const sb &pos, PieceData &piece, c
 			return;
 		} // pawn
 		case PieceType::BISHOP: {
-			calculateSliderMoves(gd, piece, pos, bIndex, lt.bishopLookupTable);
+			calculateSliderMoves(gd, piece, piece.position, piece.color, lt.bishopLookupTable);
 			return;
 		} // bishop
 		case PieceType::KNIGHT: {
-			piece.attacks |= lt.knightLookupTable[boardToInt(pos)][0];
+			piece.attacks |= lt.knightLookupTable[boardToInt(piece.position)][0];
 			return;
 		} // knight
 		case PieceType::ROOK: {
-			calculateSliderMoves(gd, piece, pos, bIndex, lt.rookLookupTable);
+			calculateSliderMoves(gd, piece, piece.position, piece.color, lt.rookLookupTable);
 			return;
 		} // rook
 		case PieceType::QUEEN: {
-			calculateSliderMoves(gd, piece, pos, bIndex, lt.queenLookupTable);
+			calculateSliderMoves(gd, piece, piece.position, piece.color, lt.queenLookupTable);
 			return;
 		} // queen
 		case PieceType::KING: {
-			piece.attacks |= lt.kingLookupTable[boardToInt(pos)][0];
+			piece.attacks |= lt.kingLookupTable[boardToInt(piece.position)][0];
 			return;
 		} // king
 
@@ -156,30 +156,25 @@ void Piece::updateAtksAndObsvrs(GameData &gd, const sb &pos, PieceData &piece, c
 	}
 }
 
-void Piece::updateObservering(GameData &gd, const int &observingIndex, const int &bIndex,
-                              const LookupTables &lt) {
-	std::vector<uint8_t> observing = gd.whiteObservers[observingIndex];
-	for (auto &pieceId: observing) {
-		const int pIndex = getPieceIndex(gd.whitePieces, pieceId);
-		PieceData &piece{gd.whitePieces[pIndex]};
-		updateAtksAndObsvrs(gd, piece.position, piece, bIndex, static_cast<PieceType>(bIndex / 2), lt);
+void Piece::updateObservering(GameData &gd, const int &observingIndex, const LookupTables &lt) {
+	ObserverData observing = gd.whiteObservers[observingIndex];
+	for (int i = 0; i < observing.counter; i++) {
+		PieceData &piece{gd.whitePieces[observing.ids[i]]};
+		updateAtksAndObsvrs(gd, piece, lt);
 	}
 
 	observing = gd.blackObservers[observingIndex];
-	for (auto &pieceId: observing) {
-		const int pIndex = getPieceIndex(gd.blackPieces, pieceId);
-		PieceData &piece{gd.blackPieces[pIndex]};
-		updateAtksAndObsvrs(gd, piece.position, piece, bIndex, static_cast<PieceType>(bIndex / 2), lt);
+	for (int i = 0; i < observing.counter; i++) {
+		PieceData &piece{gd.blackPieces[observing.ids[i]]};
+		updateAtksAndObsvrs(gd, piece, lt);
 	}
 }
 
 template<size_t N>
-void Piece::calculateSliderMoves(GameData &gd, PieceData &piece, const sb &pos, const int &bIndex,
+void Piece::calculateSliderMoves(GameData &gd, PieceData &piece, const sb &pos, const Color &pieceColor,
                                  const lb<N> &table) {
-	const Color pieceColor = getColor(bIndex);
-
-	const sb sColorBoard = getColorBoard(gd.board, bIndex % 2);
-	const sb dColorBoard = getColorBoard(gd.board, !(bIndex % 2));
+	const sb sColorBoard = pieceColor == Color::WHITE ? gd.whiteBoard : gd.blackBoard;
+	const sb dColorBoard = pieceColor == Color::BLACK ? gd.whiteBoard : gd.blackBoard;
 
 	sb bObservers = 0;
 	piece.attacks = 0;
@@ -241,33 +236,15 @@ void Piece::calculateSliderMoves(GameData &gd, PieceData &piece, const sb &pos, 
 
 	ob &sColorObservers = (pieceColor == Color::WHITE) ? gd.whiteObservers : gd.blackObservers;
 
+	// update the piece's observing data
+	piece.observing = bObservers;
+
 	// convert the observer board to the observer array
 	while (bObservers) {
 		const int observerIndex = __builtin_ctzll(bObservers);
 
-		sColorObservers[observerIndex].push_back(piece.id);
+		sColorObservers[observerIndex].add(piece.id);
 
 		bObservers &= ~(0x1ULL << observerIndex);
 	}
-}
-
-int Piece::getBoardIndex(const fb &bBoard, const sb &currentPos) {
-	for (int i = 0; i < 12; i++) { if ((bBoard[i] & currentPos) != 0) { return i; } }
-	return -1;
-}
-
-sb Piece::getColorBoard(const fb &bBoard, const bool &color) {
-	sb outBoard{0};
-	for (int i = color; i < 12; i += 2) { outBoard |= bBoard[i]; }
-	return outBoard;
-}
-
-int Piece::getPieceIndex(const pb &dPieces, const sb &currentPos) {
-	for (int i = 0; i < 16; i++) { if (dPieces[i].position & currentPos) { return i; } }
-	return -1;
-}
-
-int Piece::getPieceIndex(const pb &dPieces, const uint8_t &id) {
-	for (int i = 0; i < 16; i++) { if (dPieces[i].id == id) { return i; } }
-	return -1;
 }
