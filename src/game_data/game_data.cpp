@@ -95,17 +95,15 @@ void game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		piece.observing &= ~(0x1ULL << observer_index);
 	}
 
-	// update position of the piece
-	piece.position = new_pos;
-
 	// update piece lookup
 	piece_lookup[sb_to_int(prev_pos)] = 255;
 
-	if (piece_lookup[sb_to_int(new_pos)] != 255) { capture(piece); } // capture if an enemy piece is at new_pos
+	// capture if an enemy piece is at new_pos
+	if (piece_lookup[sb_to_int(new_pos)] != 255) { capture(piece, new_pos); }
 
 	piece_lookup[sb_to_int(new_pos)] = piece_index;
 
-	// update color board
+	// update friendly color board
 	if (piece_color == piece_color::WHITE) {
 		white_board &= ~prev_pos;
 		white_board |= new_pos;
@@ -114,6 +112,8 @@ void game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		black_board |= new_pos;
 	}
 
+	// update position of the piece
+	piece.position = new_pos;
 	// reset piece's attacks
 	piece.attacks = 0;
 
@@ -133,22 +133,20 @@ void game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
  * This function handles capture logic during a move.
  *
  * @param piece the piece_data of the piece doing the capturing
+ * @param new_pos the position of the conflict square
  */
-void game_data::capture(const piece_data &piece) {
-	const piece_color piece_color = get_color(piece.position);
-
-	const sb friendly_board = piece.color == piece_color::WHITE ? white_board : black_board;
+void game_data::capture(const piece_data &piece, const sb new_pos) {
 	sb &enemy_board = piece.color == piece_color::WHITE ? black_board : white_board;
 
-	std::array<observer_data, 64> &enemy_observers = piece_color == piece_color::WHITE
+	std::array<observer_data, 64> &enemy_observers = piece.color == piece_color::WHITE
 		                                                 ? black_observers
 		                                                 : white_observers;
 
-	std::array<piece_data, 16> &enemy_pieces = piece_color == piece_color::WHITE ? black_pieces : white_pieces;
+	std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
 
-	const int capture_index = sb_to_int(piece.position);
+	const int capture_index = sb_to_int(new_pos);
 
-	enemy_board &= ~piece.position;
+	enemy_board &= ~new_pos;
 
 	piece_data &captured_piece = enemy_pieces[piece_lookup[capture_index]];
 	piece_lookup[capture_index] = 255;

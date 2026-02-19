@@ -5,7 +5,7 @@
 
 using sb = uint64_t; // represents each square on the board as a single bit
 
-enum class piece_color : int { BLACK = 0, WHITE = 1, NONE = NULL };
+enum class piece_color : int { BLACK = 0, WHITE = 1, NONE = -1 };
 
 enum class piece_type : int {
 	PAWN = 0,
@@ -14,7 +14,7 @@ enum class piece_type : int {
 	ROOK = 3,
 	QUEEN = 4,
 	KING = 5,
-	EMPTY = NULL
+	EMPTY = -1
 };
 
 struct piece_data {
@@ -23,7 +23,7 @@ struct piece_data {
 	sb observing; // the board representing all the square the piece is observing
 	piece_type type;
 	piece_color color;
-	uint8_t id;
+	uint8_t id; // the position of the piece in the piece arrays
 	bool is_slider;
 
 	piece_data() : attacks(0), position(0), observing(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
@@ -91,10 +91,12 @@ private:
 	static inline int sb_to_int(const sb board) { return __builtin_ctzll(board); }
 
 	inline piece_color get_color(const sb pos) const {
-		return (white_board & pos) ? piece_color::WHITE : piece_color::BLACK;
+		if (pos & white_board) { return piece_color::WHITE; }
+		if (pos & black_board) { return piece_color::BLACK; }
+		return piece_color::NONE;
 	}
 
-	void capture(const piece_data &piece);
+	void capture(const piece_data &piece, sb new_pos);
 
 	void update_attacks(piece_data &piece, const lookup_tables &lt);
 	void update_observers(const int observer_index, const lookup_tables &lt);
