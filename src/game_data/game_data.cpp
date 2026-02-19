@@ -11,10 +11,10 @@
  * @return a boolean which is true if the move is valid and false otherwise
  */
 bool game_data::is_move_valid(const sb current_pos, const sb future_pos) const {
-	const color piece_color = get_color(current_pos);
+	const piece_color piece_color = get_color(current_pos);
 
-	const sb &friendly_board = piece_color == color::WHITE ? white_board : black_board;
-	const std::array<piece_data, 16> &friendly_pieces = piece_color == color::WHITE ? white_pieces : black_pieces;
+	const sb &friendly_board = piece_color == piece_color::WHITE ? white_board : black_board;
+	const std::array<piece_data, 16> &friendly_pieces = piece_color == piece_color::WHITE ? white_pieces : black_pieces;
 
 	const int piece_index = piece_lookup[sb_to_int(current_pos)];
 
@@ -27,8 +27,8 @@ bool game_data::is_move_valid(const sb current_pos, const sb future_pos) const {
 
 	// check for the pawn
 	if (piece.type == piece_type::PAWN) {
-		sb temp_board = piece_color == color::WHITE ? current_pos << 8 : current_pos >> 8;
-		const sb enemy_board = piece_color == color::BLACK ? white_board : black_board;
+		sb temp_board = piece_color == piece_color::WHITE ? current_pos << 8 : current_pos >> 8;
+		const sb enemy_board = piece_color == piece_color::BLACK ? white_board : black_board;
 
 		// check take left
 		if ((enemy_board & (temp_board << 1)) & future_pos) { return true; }
@@ -41,9 +41,9 @@ bool game_data::is_move_valid(const sb current_pos, const sb future_pos) const {
 			if (temp_board & future_pos) { return true; }
 
 			// check double move forwards
-			temp_board = piece_color == color::WHITE ? temp_board << 8 : temp_board >> 8;
+			temp_board = piece_color == piece_color::WHITE ? temp_board << 8 : temp_board >> 8;
 
-			const bool on_starting_rank = piece_color == color::WHITE
+			const bool on_starting_rank = piece_color == piece_color::WHITE
 				                              ? current_pos & 0x000000000000FF00ULL
 				                              : current_pos & 0x00FF000000000000ULL;
 
@@ -70,10 +70,10 @@ bool game_data::is_move_valid(const sb current_pos, const sb future_pos) const {
  * @param lt the full lookup table object
  */
 void game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &lt) {
-	const color piece_color = get_color(prev_pos);
+	const piece_color piece_color = get_color(prev_pos);
 
-	std::array<piece_data, 16> &friendly_pieces = piece_color == color::WHITE ? white_pieces : black_pieces;
-	std::array<observer_data, 64> &friendly_observers = piece_color == color::WHITE
+	std::array<piece_data, 16> &friendly_pieces = piece_color == piece_color::WHITE ? white_pieces : black_pieces;
+	std::array<observer_data, 64> &friendly_observers = piece_color == piece_color::WHITE
 		                                                    ? white_observers
 		                                                    : black_observers;
 
@@ -100,10 +100,13 @@ void game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 
 	// update piece lookup
 	piece_lookup[sb_to_int(prev_pos)] = 255;
+
+	if (piece_lookup[sb_to_int(new_pos)] != 255) { capture(piece); } // capture if an enemy piece is at new_pos
+
 	piece_lookup[sb_to_int(new_pos)] = piece_index;
 
 	// update color board
-	if (piece_color == color::WHITE) {
+	if (piece_color == piece_color::WHITE) {
 		white_board &= ~prev_pos;
 		white_board |= new_pos;
 	} else {
@@ -127,6 +130,42 @@ void game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 }
 
 /**
+ * This function handles capture logic during a move.
+ *
+ * @param piece the piece_data of the piece doing the capturing
+ */
+void game_data::capture(const piece_data &piece) {
+	const piece_color piece_color = get_color(piece.position);
+
+	const sb friendly_board = piece.color == piece_color::WHITE ? white_board : black_board;
+	sb &enemy_board = piece.color == piece_color::WHITE ? black_board : white_board;
+
+	std::array<observer_data, 64> &enemy_observers = piece_color == piece_color::WHITE
+		                                                 ? black_observers
+		                                                 : white_observers;
+
+	std::array<piece_data, 16> &enemy_pieces = piece_color == piece_color::WHITE ? black_pieces : white_pieces;
+
+	const int capture_index = sb_to_int(piece.position);
+
+	enemy_board &= ~piece.position;
+
+	piece_data &captured_piece = enemy_pieces[piece_lookup[capture_index]];
+	piece_lookup[capture_index] = 255;
+
+	if (captured_piece.is_slider) {
+		while (captured_piece.observing) {
+			const int observer_index = __builtin_ctzll(captured_piece.observing);
+			enemy_observers[observer_index].remove(captured_piece.id);
+			captured_piece.observing &= ~(0x1ULL << observer_index);
+		}
+	}
+
+	captured_piece.reset();
+}
+
+
+/**
  * This function checks the type of the piece being passed, then updates the attacks and observers corresponding to
  * the piece type.
  *
@@ -137,7 +176,7 @@ void game_data::update_attacks(piece_data &piece, const lookup_tables &lt) {
 	switch (piece.type) {
 		case piece_type::PAWN: {
 			// move forward one
-			const sb temp_board = piece.color == color::WHITE ? piece.position << 8 : piece.position >> 8;
+			const sb temp_board = piece.color == piece_color::WHITE ? piece.position << 8 : piece.position >> 8;
 
 			// add take left to attacks
 			piece.attacks |= temp_board << 1;
@@ -202,8 +241,8 @@ void game_data::update_observers(const int observer_index, const lookup_tables &
  */
 template<size_t N>
 void game_data::update_sliders(piece_data &piece, const lb<N> &table) {
-	const sb friendly_board = piece.color == color::WHITE ? white_board : black_board;
-	const sb enemy_board = piece.color == color::BLACK ? white_board : black_board;
+	const sb friendly_board = piece.color == piece_color::WHITE ? white_board : black_board;
+	const sb enemy_board = piece.color == piece_color::BLACK ? white_board : black_board;
 
 	sb observing_board = 0;
 	piece.attacks = 0;
@@ -274,7 +313,7 @@ void game_data::update_sliders(piece_data &piece, const lb<N> &table) {
 		observing_board |= arm & mask;
 	}
 
-	std::array<observer_data, 64> &friendly_observers = piece.color == color::WHITE
+	std::array<observer_data, 64> &friendly_observers = piece.color == piece_color::WHITE
 		                                                    ? white_observers
 		                                                    : black_observers;
 

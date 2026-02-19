@@ -5,7 +5,7 @@
 
 using sb = uint64_t; // represents each square on the board as a single bit
 
-enum class color : int { BLACK = 0, WHITE = 1 };
+enum class piece_color : int { BLACK = 0, WHITE = 1, NONE = NULL };
 
 enum class piece_type : int {
 	PAWN = 0,
@@ -13,7 +13,8 @@ enum class piece_type : int {
 	KNIGHT = 2,
 	ROOK = 3,
 	QUEEN = 4,
-	KING = 5
+	KING = 5,
+	EMPTY = NULL
 };
 
 struct piece_data {
@@ -21,9 +22,27 @@ struct piece_data {
 	sb position; // the board representing the position of the piece
 	sb observing; // the board representing all the square the piece is observing
 	piece_type type;
-	color color;
+	piece_color color;
 	uint8_t id;
 	bool is_slider;
+
+	piece_data() : attacks(0), position(0), observing(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
+	               is_slider(false) {}
+
+	void set(const piece_type type, const piece_color color, const uint8_t id, const bool is_slider) {
+		attacks = position = observing = 0;
+		this->type = type;
+		this->color = color;
+		this->id = id;
+		this->is_slider = is_slider;
+	} // must refetch attacks / position / observing
+
+	void reset() {
+		attacks = position = observing = 0;
+		color = piece_color::NONE;
+		type = piece_type::EMPTY;
+		is_slider = false;
+	}
 };
 
 struct observer_data {
@@ -43,7 +62,8 @@ struct observer_data {
 };
 
 template<size_t N>
-using lb = std::array<std::array<sb, N>, 64>; // represents the lookup table of length 64 for each square and N size for the number of arms
+using lb = std::array<std::array<sb, N>, 64>;
+// represents the lookup table of length 64 for each square and N size for the number of arms
 
 // each entry is indexed by a square (0-63), containing N arms.
 // arms are ordered: left, then clockwise
@@ -69,7 +89,12 @@ struct game_data {
 
 private:
 	static inline int sb_to_int(const sb board) { return __builtin_ctzll(board); }
-	inline color get_color(const sb pos) const { return (white_board & pos) ? color::WHITE : color::BLACK; }
+
+	inline piece_color get_color(const sb pos) const {
+		return (white_board & pos) ? piece_color::WHITE : piece_color::BLACK;
+	}
+
+	void capture(const piece_data &piece);
 
 	void update_attacks(piece_data &piece, const lookup_tables &lt);
 	void update_observers(const int observer_index, const lookup_tables &lt);
