@@ -4,174 +4,12 @@
 #include <iostream>
 
 /**
- * Checks a piece at current_pos to see if future_pos is a valid move.
- *
- * @param current_pos the current position
- * @param future_pos the future position to check
- * @param lt the lookup tables for pieces
- * @return a boolean which is true if the move is valid and false otherwise
- */
-bool game_data::is_move_valid(const sb current_pos, const sb future_pos, const lookup_tables &lt) const {
-	const piece_color piece_color = get_color(current_pos);
-
-	const sb friendly_board = piece_color == piece_color::WHITE ? white_board : black_board;
-	const std::array<piece_data, 16> &friendly_pieces = piece_color == piece_color::WHITE ? white_pieces : black_pieces;
-
-	const int piece_index = piece_lookup[sb_to_int(current_pos)];
-
-	if (piece_index == 255) { std::cerr << "Invalid piece sent to isMoveValid" << std::endl; }
-
-	const piece_data piece = friendly_pieces[piece_index];
-
-	// check for the pawn
-	if (piece.type == piece_type::PAWN) {
-		sb temp_board = piece_color == piece_color::WHITE ? current_pos << 8 : current_pos >> 8;
-		const sb enemy_board = piece_color == piece_color::BLACK ? white_board : black_board;
-
-		// check take left
-		if ((enemy_board & (temp_board << 1)) & future_pos) { return true; }
-
-		// check take right
-		if ((enemy_board & (temp_board >> 1)) & future_pos) { return true; }
-
-		// check move forwards
-		if (!(temp_board & (friendly_board | enemy_board))) {
-			if (temp_board & future_pos) { return true; }
-
-			// check double move forwards
-			temp_board = piece_color == piece_color::WHITE ? temp_board << 8 : temp_board >> 8;
-
-			const bool on_starting_rank = piece_color == piece_color::WHITE
-				                              ? current_pos & 0x000000000000FF00ULL
-				                              : current_pos & 0x00FF000000000000ULL;
-
-			const bool is_path_clear = !(temp_board & (friendly_board | enemy_board));
-
-			if (on_starting_rank && is_path_clear && temp_board & future_pos) { return true; }
-		}
-
-		return false;
-	}
-
-	// check for non-pawn
-	if (future_pos & (piece.attacks & ~friendly_board)) { return true; }
-
-	return false;
-}
-
-/* true is good to go, false is invalid move... eventually needs to be computed in move function
-bool game_data::checking_checks(const piece_data &piece, const sb current_pos, const sb future_pos,
-                                const lookup_tables &lt) const {
-	// need to check if under check
-	const std::array<piece_data, 16> friendly_pieces = piece.color == piece_color::WHITE ? white_pieces : black_pieces;
-
-	const std::array<int, 64> enemy_attack_weight = piece.color == piece_color::WHITE
-		                                                ? black_attack_weight
-		                                                : white_attack_weight;
-
-	const sb king_pos = friendly_pieces[15].position;
-
-	// if no one is attacking the king, then no checks
-	if (enemy_attack_weight[king_pos] == 0) { return true; }
-	// need to check for double check (king must move)
-	if (enemy_attack_weight[king_pos] > 1) { if (piece.type != piece_type::KING) { return false; } }
-
-	const sb enemy_checkers = piece.color == piece_color::WHITE ? black_checkers : white_checkers;
-
-	// need to check if we take the attacker
-	if (future_pos & enemy_checkers) { return true; }
-
-	const sb checker_id = piece_lookup[sb_to_int(enemy_checkers)];
-
-	const std::array<piece_data, 16> enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
-	const piece_data checker_piece = enemy_pieces[checker_id];
-
-	// check king moving out of check
-	const int future_index = sb_to_int(future_pos);
-	if (piece.type == piece_type::KING) {
-		// if the move takes us to an attacked square
-		if (enemy_attack_weight[future_index] != 0) { return false; }
-
-		// if the piece checking us is observing the space we are moving to
-		if (checker_piece.observing & future_pos) {
-			piece_data temp_piece = checker_piece;
-			const sb friendly_board = piece.color == piece_color::WHITE ? white_board : black_board;
-			const sb temp_friendly_board = (friendly_board & ~current_pos) | future_pos;
-
-			const sb enemy_board = piece.color == piece_color::WHITE ? black_board : white_board;
-
-			// update the attacks of our temp checker
-			update_attacks(temp_piece, enemy_board, temp_friendly_board, lt);
-
-			// if those new attacks contain the king, invalid move
-			if (temp_piece.attacks & king_pos) { return false; }
-		}
-
-		// otherwise the move is valid
-		return true;
-	}
-
-	// deal with pins
-	const int current_index = sb_to_int(current_pos);
-	if (pins[current_index] != 0) {
-		// need to calculate the arm of the piece pinning us and then make sure we are only moving along that arm\
-		// todo much later
-	}
-
-	// deal with blocking with a piece
-	switch (checker_piece.type) {
-		case piece_type::BISHOP: {
-			const lb<4> &bishop_table = lt.bishop_table;
-			int arm_index = 0;
-			for (int i = checker_piece.position > king_pos ? 0 : 4; i < 8; i++) {
-				if (bishop_table[i][checker_piece.position] & king_pos) {
-					arm_index = i;
-					break;
-				}
-			}
-
-			if (future_pos & bishop_table[arm_index][checker_piece.position]) { return true; }
-			break;
-		}
-		case piece_type::ROOK: {
-			const lb<4> &rook_table = lt.rook_table;
-			int arm_index = 0;
-			for (int i = checker_piece.position > king_pos ? 0 : 2; i < 8; i++) {
-				if (rook_table[i][checker_piece.position] & king_pos) {
-					arm_index = i;
-					break;
-				}
-			}
-
-			if (future_pos & rook_table[arm_index][checker_piece.position]) { return true; }
-			break;
-		}
-		case piece_type::QUEEN: {
-			const lb<8> &queen_table = lt.queen_table;
-			int arm_index = 0;
-			for (int i = checker_piece.position > king_pos ? 0 : 4; i < 8; i++) {
-				if (queen_table[i][checker_piece.position] & king_pos) {
-					arm_index = i;
-					break;
-				}
-			}
-
-			if (future_pos & queen_table[arm_index][checker_piece.position]) { return true; }
-			break;
-		}
-		default: break;
-	}
-
-	return false;
-} */
-
-/**
  * Moves a piece from prev_pos to new_pos and updates its values accordingly.
  *
  * @param prev_pos the previous position of the piece
  * @param new_pos the new position of the piece
  * @param lt the full lookup table object
- * @param bt the full between table
+ * @param bt the full between table object
  */
 bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &lt, const between_tables &bt) {
 	const piece_color piece_color = get_color(prev_pos);
@@ -181,14 +19,17 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	std::array<piece_data, 16> &friendly_pieces = piece_color == piece_color::WHITE ? white_pieces : black_pieces;
 	const std::array<piece_data, 16> &enemy_pieces = piece_color == piece_color::WHITE ? black_pieces : white_pieces;
 
+	sb attack_board = 0;
 	int attack_count = 0;
 	piece_data attacker;
 
+	// check for pieces attacking the king
 	for (const auto &enemy_piece: enemy_pieces) {
 		if (enemy_piece.attacks & friendly_pieces[15].position) {
-			attack_count++;
 			attacker = enemy_piece;
+			attack_count++;
 		}
+		attack_board |= enemy_piece.attacks;
 	}
 
 	const int piece_index = piece_lookup[sb_to_int(prev_pos)];
@@ -202,16 +43,57 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	// get the piece and board index
 	piece_data &piece{friendly_pieces[piece_index]};
 
-	// check logic
-	if (attack_count) {
+	// lambda for checking pawn moves
+	const auto is_valid_pawn_move = [&]() -> bool {
+		sb temp_board = piece_color == piece_color::WHITE ? prev_pos << 8 : prev_pos >> 8;
+
+		// check take left (towards the A file with H file mask)
+		if ((*enemy_board & ((temp_board & ~0x8080808080808080ULL) << 1)) & new_pos) { return true; }
+
+		// check take right (towards the H file with A file mask)
+		if ((*enemy_board & ((temp_board & ~0x0101010101010101ULL) >> 1)) & new_pos) { return true; }
+
+		// check move forwards
+		if (!(temp_board & (*friendly_board | *enemy_board))) {
+			if (temp_board & new_pos) { return true; }
+
+			// check double move forwards
+			temp_board = piece_color == piece_color::WHITE ? temp_board << 8 : temp_board >> 8;
+
+			const bool on_starting_rank = piece_color == piece_color::WHITE
+				                              ? prev_pos & 0x000000000000FF00ULL
+				                              : prev_pos & 0x00FF000000000000ULL;
+
+			const bool is_path_clear = !(temp_board & (*friendly_board | *enemy_board));
+
+			if (on_starting_rank && is_path_clear && (temp_board & new_pos)) { return true; }
+		}
+		return false;
+	};
+
+	// check if the move is valid for pawn
+	if (piece.type == piece_type::PAWN) { if (!is_valid_pawn_move()) { return false; } }
+	// check if the move is invalid for non-pawn
+	else if ((new_pos & (piece.attacks & ~*friendly_board)) == 0) { return false; }
+
+	// todo need to deal with pins
+	if (piece.pinner_id != 255) {
+		// need to get the enemy piece pinning us
+		// need to get position of our own king
+		// need to make only moves on the line between the pinning piece and the king
+	}
+
+	// non-king check logic
+	if (attack_count && piece.type != piece_type::KING) {
 		// king must move if under double check
-		if (piece.type != piece_type::KING && attack_count > 1) { return false; }
+		if (attack_count > 1) { return false; }
 
 		std::array<piece_data *, 8> observers;
-		int num_observers = get_observers(friendly_pieces[15], friendly_board, enemy_board, lt.queen_table, observers);
+		int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
+		                                  observers);
 
 		// if zero observers, then the piece is not a slider... must move the king or take
-		if (num_observers == 0) { if (piece.type != piece_type::KING || new_pos & attacker.position) { return false; } }
+		if (num_observers == 0) { if (!(new_pos & attacker.position)) { return false; } }
 
 		// see if move blocks check
 		const int king_index = sb_to_int(friendly_pieces[15].position);
@@ -224,9 +106,36 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 
 			// if the piece doesn't block or doesn't capture
 			if (!(ray & new_pos) && !(new_pos & observer->position)) { return false; }
+		}
+	}
 
-			// if the piece is pinned and trying to move off the pin, invalid move
-			if (piece.is_pinned && !(ray & new_pos)) { return false; }
+	// extra king logic
+	if (piece.type == piece_type::KING) {
+		// king cannot move into danger
+		if (new_pos & attack_board) { return false; }
+
+		if (attack_count) {
+			std::array<piece_data *, 8> observers;
+			const int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
+			                                        observers);
+
+			const sb kingless_friendly_board = *friendly_board & ~friendly_pieces[15].position;
+
+			// need to check if the pieces attack the new square the king is moving to (X-ray attacks)
+			for (int i = 0; i < num_observers; i++) {
+				auto observer = *observers[i];
+				if (observer.color == piece.color) { continue; }
+
+				// get the new attacks of the observers
+				auto [observer_friendly_board, observer_enemy_board] = get_boards(observers[i]->color);
+				update_attacks(observer, kingless_friendly_board, *observer_enemy_board, lt);
+
+				// add the new attack positions to the attack board
+				attack_board |= observer.attacks;
+			}
+
+			// king cannot move into danger
+			if (new_pos & attack_board) { return false; }
 		}
 	}
 
@@ -240,30 +149,30 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	piece_lookup[sb_to_int(new_pos)] = piece_index;
 
 	// update friendly color board
-	friendly_board &= ~prev_pos;
-	friendly_board |= new_pos;
+	*friendly_board &= ~prev_pos;
+	*friendly_board |= new_pos;
 
 	// update old observers
 	std::array<piece_data *, 8> observers;
-	int num_observers = get_observers(piece, friendly_board, enemy_board, lt.queen_table, observers);
+	int num_observers = get_observers(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
 
 	for (int i = 0; i < num_observers; i++) {
 		auto [observer_friendly_board, observer_enemy_board] = get_boards(observers[i]->color);
-		update_attacks(*observers[i], observer_friendly_board, observer_enemy_board, lt);
+		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
 
 	// update position of the piece
 	piece.position = new_pos;
 	// update attacks of the moved piece
-	update_attacks(piece, friendly_board, enemy_board, lt);
+	update_attacks(piece, *friendly_board, *enemy_board, lt);
 
 	// update new observers
 	observers = std::array<piece_data *, 8>{};
-	num_observers = get_observers(piece, friendly_board, enemy_board, lt.queen_table, observers);
+	num_observers = get_observers(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
 
 	for (int i = 0; i < num_observers; i++) {
 		auto [observer_friendly_board, observer_enemy_board] = get_boards(observers[i]->color);
-		update_attacks(*observers[i], observer_friendly_board, observer_enemy_board, lt);
+		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
 
 	return true;
@@ -333,7 +242,6 @@ void game_data::update_attacks(piece_data &piece, const sb friendly_board, const
 			return;
 		} // queen
 		case piece_type::KING: {
-			// todo check stuff to make sure king isn't moving somewhere bad
 			piece.attacks |= lt.king_table[sb_to_int(piece.position)][0];
 			return;
 		} // king
@@ -375,7 +283,7 @@ void game_data::update_sliders(piece_data &piece, const sb friendly_board, const
 
 		sb mask = 0;
 
-		// get msb or lsb and build masks
+		// if the arm has a value greater than the position, then we need the lsb else we need the msb
 		if (arm > piece.position) {
 			// gets the trailing zeros of the board, giving the index of the first hit
 			first_hit_index = __builtin_ctzll(hits);
@@ -397,26 +305,7 @@ void game_data::update_sliders(piece_data &piece, const sb friendly_board, const
 		// add arm to attacks with the hit
 		piece.attacks |= arm & mask;
 
-		// removes the first hit so that repeating the process gives the second hit
-		hits = hits & ~(0x1ULL << first_hit_index);
-
-		// if the second check doesn't hit
-		if (hits == 0) { continue; }
-
-		// resets variables
-		int second_hit_index = 0;
-		mask = 0;
-
-		// get msb and lsb for the second hit
-		if (arm > piece.position) {
-			// same as before with new hits
-			second_hit_index = __builtin_ctzll(hits);
-			mask = (0x1ULL << (second_hit_index + 1)) - 1;
-		} else {
-			// same as before with new hits
-			second_hit_index = 63 - __builtin_clzll(hits);
-			mask = ~((0x1ULL << second_hit_index) - 1);
-		}
+		// todo need to readd second hit for pin checking (only run if first hit was opposite color and need if second hit is opponent's king)
 	}
 }
 
@@ -448,6 +337,11 @@ int game_data::get_observers(const piece_data &piece, const sb friendly_board,
 		}
 
 		const sb hit_board = 0x1ULL << hit_index;
+
+		if (piece_lookup[hit_index] == 255) {
+			std::cerr << "Invalid piece lookup sent to get_observers" << std::endl;
+			return 0;
+		}
 
 		// get the piece that got hit
 		piece_data &hit_piece = hit_board & friendly_board

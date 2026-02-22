@@ -18,16 +18,15 @@ enum class piece_type : int {
 };
 
 struct piece_data {
-	sb valid_moves; // the moves that the piece can make
-	sb attacks; // the board representing all attacks of a piece
 	sb position; // the board representing the position of the piece
+	sb attacks; // the board representing all attacks of a piece
 	piece_type type;
 	piece_color color;
 	uint8_t id; // the position of the piece in the piece arrays
-	bool is_pinned;
+	uint8_t pinner_id; // id if the piece pinning this piece... 255 if no pin
 
-	piece_data() : valid_moves(0), attacks(0), position(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
-	               is_pinned(false) {}
+	piece_data() : position(0), attacks(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
+	               pinner_id(255) {}
 
 	void set(const piece_type type, const piece_color color, const uint8_t id) {
 		attacks = position = 0;
@@ -57,8 +56,8 @@ struct lookup_tables {
 	lb<1> king_table;
 };
 
-// arms between all two positions on the board
-// should only include the 8 cardinal directions with all other positons being sb = 0xFFFFFFFFFFFFFFFFULL
+// arms between all two positions on the board including the start and end
+// should only include the 8 cardinal directions with all other positons being sb = 0x0ULL
 using between_tables = std::array<std::array<sb, 64>, 64>;
 
 struct game_data {
@@ -67,10 +66,8 @@ struct game_data {
 	std::array<uint8_t, 64> piece_lookup;
 	std::array<piece_data, 16> white_pieces; // the last piece must be king
 	std::array<piece_data, 16> black_pieces; // the last piece must be king
-	std::array<uint8_t, 64> pins;
 
-	bool is_move_valid(sb current_pos, sb future_pos, const lookup_tables &lt) const;
-	bool move(const sb prev_pos, const sb new_pos, const lookup_tables &lt, const between_tables &bt);
+	bool move(sb prev_pos, sb new_pos, const lookup_tables &lt, const between_tables &bt);
 
 private:
 	static int sb_to_int(const sb board) { return __builtin_ctzll(board); }
@@ -81,24 +78,22 @@ private:
 		return piece_color::NONE;
 	}
 
-	std::pair<sb, sb> game_data::get_boards(const piece_color color) const {
+	std::pair<sb *, sb *> game_data::get_boards(const piece_color color) {
 		return color == piece_color::WHITE
-			       ? std::pair{white_board, black_board}
-			       : std::pair{black_board, white_board};
+			       ? std::pair{&white_board, &black_board}
+			       : std::pair{&black_board, &white_board};
 	}
-
-	/*
-	bool checking_checks(const piece_data &piece, sb current_pos, sb future_pos,
-	                     const lookup_tables &lt) const; */
 
 	void capture(const piece_data &piece, sb new_pos);
 
 	void update_attacks(piece_data &piece, sb friendly_board, sb enemy_board,
 	                    const lookup_tables &lt) const;
 
+	template<size_t N>
+	void update_sliders(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table) const;
+
 	int get_observers(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
 	                  std::array<piece_data *, 8> &observers);
 
-	template<size_t N>
-	void update_sliders(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table) const;
+	// todo an update pins function that takes the double ray hits of the king (will run each king move)
 };
