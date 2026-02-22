@@ -202,7 +202,7 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	// get the piece and board index
 	piece_data &piece{friendly_pieces[piece_index]};
 
-	// check for a valid move
+	// check logic
 	if (attack_count) {
 		// king must move if under double check
 		if (piece.type != piece_type::KING && attack_count > 1) { return false; }
@@ -213,7 +213,7 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		// if zero observers, then the piece is not a slider... must move the king or take
 		if (num_observers == 0) { if (piece.type != piece_type::KING || new_pos & attacker.position) { return false; } }
 
-		// check if move blocks check
+		// see if move blocks check
 		const int king_index = sb_to_int(friendly_pieces[15].position);
 		for (int i = 0; i < num_observers; i++) {
 			const auto *observer = observers[i];
@@ -222,7 +222,7 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 			const int observer_index = sb_to_int(observer->position);
 			const sb ray = bt[king_index][observer_index];
 
-			// of the piece doesn't block or doesn't capture
+			// if the piece doesn't block or doesn't capture
 			if (!(ray & new_pos) && !(new_pos & observer->position)) { return false; }
 
 			// if the piece is pinned and trying to move off the pin, invalid move
