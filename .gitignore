@@ -1,6 +1,4 @@
-bin
-assets
-cmake-build-debug
+assets/
+cmake-build-debug/
 
-.idea
-.gitattributes
+.idea/
