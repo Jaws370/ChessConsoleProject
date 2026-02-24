@@ -23,7 +23,7 @@ struct piece_data {
 	piece_type type;
 	piece_color color;
 	uint8_t id; // the position of the piece in the piece arrays
-	uint8_t pinner_id; // id if the piece pinning this piece... 255 if no pin
+	uint8_t pinner_id; // the id if the piece pinning this piece... 255 if no pin
 
 	piece_data() : position(0), attacks(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
 	               pinner_id(255) {}
@@ -87,10 +87,10 @@ private:
 	void capture(const piece_data &piece, sb new_pos);
 
 	void update_attacks(piece_data &piece, sb friendly_board, sb enemy_board,
-	                    const lookup_tables &lt) const;
+	                    const lookup_tables &lt);
 
 	template<size_t N>
-	void update_sliders(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table) const;
+	void update_sliders(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table);
 
 	int get_observers(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
 	                  std::array<piece_data *, 8> &observers);

@@ -43,15 +43,25 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	// get the piece and board index
 	piece_data &piece{friendly_pieces[piece_index]};
 
+	// checks for pin logic
+	if (piece.pinner_id != 255) {
+		const int pinner_index = sb_to_int(enemy_pieces[piece.pinner_id].position);
+		const int king_index = sb_to_int(friendly_pieces[15].position);
+
+		// need to make only moves on the line between the pinning piece and the king
+		const sb ray = bt[pinner_index][king_index];
+		if (!(ray & new_pos)) { return false; }
+	}
+
 	// lambda for checking pawn moves
 	const auto is_valid_pawn_move = [&]() -> bool {
 		sb temp_board = piece_color == piece_color::WHITE ? prev_pos << 8 : prev_pos >> 8;
 
 		// check take left (towards the A file with H file mask)
-		if ((*enemy_board & ((temp_board & ~0x8080808080808080ULL) << 1)) & new_pos) { return true; }
+		if ((*enemy_board & ((temp_board << 1) & ~0x0101010101010101ULL)) & new_pos) { return true; }
 
 		// check take right (towards the H file with A file mask)
-		if ((*enemy_board & ((temp_board & ~0x0101010101010101ULL) >> 1)) & new_pos) { return true; }
+		if ((*enemy_board & ((temp_board >> 1) & ~0x8080808080808080ULL)) & new_pos) { return true; }
 
 		// check move forwards
 		if (!(temp_board & (*friendly_board | *enemy_board))) {
@@ -76,21 +86,14 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	// check if the move is invalid for non-pawn
 	else if ((new_pos & (piece.attacks & ~*friendly_board)) == 0) { return false; }
 
-	// todo need to deal with pins
-	if (piece.pinner_id != 255) {
-		// need to get the enemy piece pinning us
-		// need to get position of our own king
-		// need to make only moves on the line between the pinning piece and the king
-	}
-
 	// non-king check logic
 	if (attack_count && piece.type != piece_type::KING) {
 		// king must move if under double check
 		if (attack_count > 1) { return false; }
 
 		std::array<piece_data *, 8> observers;
-		int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
-		                                  observers);
+		const int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
+		                                        observers);
 
 		// if zero observers, then the piece is not a slider... must move the king or take
 		if (num_observers == 0) { if (!(new_pos & attacker.position)) { return false; } }
@@ -114,6 +117,7 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		// king cannot move into danger
 		if (new_pos & attack_board) { return false; }
 
+		// king check logic
 		if (attack_count) {
 			std::array<piece_data *, 8> observers;
 			const int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
@@ -161,6 +165,8 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
 
+	// todo need to remove old pins
+
 	// update position of the piece
 	piece.position = new_pos;
 	// update attacks of the moved piece
@@ -174,6 +180,8 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		auto [observer_friendly_board, observer_enemy_board] = get_boards(observers[i]->color);
 		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
+
+	// todo need to recheck for new pins
 
 	return true;
 }
@@ -210,18 +218,18 @@ void game_data::capture(const piece_data &piece, const sb new_pos) {
  * @param lt the full list of lookup tables
  */
 void game_data::update_attacks(piece_data &piece, const sb friendly_board, const sb enemy_board,
-                               const lookup_tables &lt) const {
+                               const lookup_tables &lt) {
 	piece.attacks = 0;
 	switch (piece.type) {
 		case piece_type::PAWN: {
 			// move forward one
 			const sb temp_board = piece.color == piece_color::WHITE ? piece.position << 8 : piece.position >> 8;
 
-			// add take left to attacks
-			piece.attacks |= temp_board << 1;
+			// add take left to attacks (towards the A file with H file mask)
+			piece.attacks |= ((temp_board << 1) & ~0x0101010101010101);
 
-			// add take right to attacks
-			piece.attacks |= temp_board >> 1;
+			// add take right to attacks (towards the H file with A file mask)
+			piece.attacks |= ((temp_board >> 1) & ~0x8080808080808080);
 
 			return;
 		} // pawn
@@ -260,12 +268,8 @@ void game_data::update_attacks(piece_data &piece, const sb friendly_board, const
  * @param enemy_board
  * @param table the lookup table for the piece
  */
-template
-<
-	size_t N
->
-void game_data::update_sliders(piece_data &piece, const sb friendly_board, const sb enemy_board,
-                               const lb<N> &table) const {
+template<size_t N>
+void game_data::update_sliders(piece_data &piece, const sb friendly_board, const sb enemy_board, const lb<N> &table) {
 	piece.attacks = 0;
 
 	// go through each arm
@@ -305,7 +309,42 @@ void game_data::update_sliders(piece_data &piece, const sb friendly_board, const
 		// add arm to attacks with the hit
 		piece.attacks |= arm & mask;
 
-		// todo need to readd second hit for pin checking (only run if first hit was opposite color and need if second hit is opponent's king)
+
+		// remove the first hit from the hits
+		hits &= ~(0x1ULL << first_hit_index);
+
+		// checks if there is no second hit to check
+		if (hits == 0) { continue; }
+
+		// only need to calculate the second hit for pins... pins can only be on opposite color piece and king
+		if ((0x1ULL << first_hit_index) & friendly_board) { continue; }
+
+		int second_hit_index = 0;
+		std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
+
+		// if the arm has a value greater than the position, then we need the lsb else we need the msb
+		if (arm > piece.position) {
+			// gets the trailing zeros of the board, giving the index of the first hit
+			second_hit_index = __builtin_ctzll(hits);
+
+			// Builds the mask for the first hit by shifting to the position of the first hit + 1
+			// (so the first hit is included), then subtracts one so the board fills with ones from the hit to the
+			// final bit. Because we want to save everything less significant than the hit, we are done.
+			mask = (0x1ULL << (first_hit_index + 1)) - 1;
+		} else {
+			// Gets leading zeros of the board. To get the index, takes this value from 63 (max index of the board).
+			second_hit_index = 63 - __builtin_clzll(hits);
+
+			// Here the mask will get all ones less significant than the hit, but we want the ones more significant.
+			// We do not add one this time but subtract one (to fill the board with ones from the hit to the final bit)
+			// and invert it. This will still keep the hit but will set all bits more significant than it to one.
+			mask = ~((0x1ULL << first_hit_index) - 1);
+		}
+
+		// if the second hit is the king, then the first piece is pinned
+		if (enemy_pieces[15].position & (0x1ULL << second_hit_index)) {
+			enemy_pieces[piece_lookup[first_hit_index]].pinner_id = piece.id;
+		}
 	}
 }
 
