@@ -92,8 +92,8 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		if (attack_count > 1) { return false; }
 
 		std::array<piece_data *, 8> observers;
-		const int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
-		                                        observers);
+		const int num_observers = ray_cast_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
+		                                             observers);
 
 		// if zero observers, then the piece is not a slider... must move the king or take
 		if (num_observers == 0) { if (!(new_pos & attacker.position)) { return false; } }
@@ -120,8 +120,9 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		// king check logic
 		if (attack_count) {
 			std::array<piece_data *, 8> observers;
-			const int num_observers = get_observers(friendly_pieces[15], *friendly_board, *enemy_board, lt.queen_table,
-			                                        observers);
+			const int num_observers = ray_cast_observers(friendly_pieces[15], *friendly_board, *enemy_board,
+			                                             lt.queen_table,
+			                                             observers);
 
 			const sb kingless_friendly_board = *friendly_board & ~friendly_pieces[15].position;
 
@@ -143,7 +144,7 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		}
 	}
 
-	// reset old piece lookup
+	// reset prev piece lookup
 	piece_lookup[sb_to_int(prev_pos)] = 255;
 
 	// capture if an enemy piece is at new_pos
@@ -156,32 +157,35 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	*friendly_board &= ~prev_pos;
 	*friendly_board |= new_pos;
 
-	// update old observers
+	// collect prev observer data
+	std::array<piece_data *, 8> rayed_pieces;
 	std::array<piece_data *, 8> observers;
-	int num_observers = get_observers(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
+	int num_observers = ray_cast_observers_and_rayed(piece, *friendly_board, *enemy_board, lt.queen_table, rayed_pieces,
+	                                                 observers);
 
+	// update prev observers
 	for (int i = 0; i < num_observers; i++) {
 		auto [observer_friendly_board, observer_enemy_board] = get_boards(observers[i]->color);
 		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
 
-	// todo need to remove old pins
+	// remove prev pins
+	for (const auto &rayed_piece: rayed_pieces) { rayed_piece->pinner_id = 255; }
 
 	// update position of the piece
 	piece.position = new_pos;
 	// update attacks of the moved piece
 	update_attacks(piece, *friendly_board, *enemy_board, lt);
 
-	// update new observers
+	// collect new observer data and update pins
 	observers = std::array<piece_data *, 8>{};
-	num_observers = get_observers(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
+	num_observers = ray_cast_observers_and_pinned(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
 
+	// update new observers
 	for (int i = 0; i < num_observers; i++) {
 		auto [observer_friendly_board, observer_enemy_board] = get_boards(observers[i]->color);
 		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
-
-	// todo need to recheck for new pins
 
 	return true;
 }
@@ -346,12 +350,13 @@ void game_data::update_sliders(piece_data &piece, const sb friendly_board, const
 			enemy_pieces[piece_lookup[first_hit_index]].pinner_id = piece.id;
 		}
 	}
+
+	// todo... need to make sure that any movement here removes the old pins on prev positions
 }
 
-// get affected pieces (pieces observing the position) to update their attacks
-int game_data::get_observers(const piece_data &piece, const sb friendly_board,
-                             const sb enemy_board, const lb<8> &table, std::array<piece_data *, 8> &observers) {
-	int count = 0;
+int game_data::ray_cast_observers(const piece_data &piece, const sb friendly_board, const sb enemy_board,
+                                  const lb<8> &table, std::array<piece_data *, 8> &observers) {
+	int observer_count = 0;
 
 	std::array<piece_data, 16> &friendly_pieces = piece.color == piece_color::WHITE ? white_pieces : black_pieces;
 	std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
@@ -390,18 +395,188 @@ int game_data::get_observers(const piece_data &piece, const sb friendly_board,
 		// checks the type of the piece... if it is correct for the arm being checked, add it to observers
 		switch (hit_piece.type) {
 			case piece_type::BISHOP:
-				if ((i % 2)) { observers[count++] = &hit_piece; }
+				if ((i % 2)) { observers[observer_count++] = &hit_piece; }
 				break;
 			case piece_type::ROOK:
-				if (!(i % 2)) { observers[count++] = &hit_piece; }
+				if (!(i % 2)) { observers[observer_count++] = &hit_piece; }
 				break;
 			case piece_type::QUEEN: {
-				observers[count++] = &hit_piece;
+				observers[observer_count++] = &hit_piece;
 				break;
 			}
 			default: break;
 		}
 	}
 
-	return count;
+	return observer_count;
+}
+
+
+// Overloaded get_rayed_pieces. Gets the rayed pieces and the observers where observers are sliders observing that square
+int game_data::ray_cast_observers_and_rayed(const piece_data &piece, const sb friendly_board, const sb enemy_board,
+                                            const lb<8> &table, std::array<piece_data *, 8> &rayed_pieces,
+                                            std::array<piece_data *, 8> &observers) {
+	int count = 0;
+	int observer_count = 0;
+
+	std::array<piece_data, 16> &friendly_pieces = piece.color == piece_color::WHITE ? white_pieces : black_pieces;
+	std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
+
+	for (int i = 0; i < 8; i++) {
+		const auto &arm = table[sb_to_int(piece.position)][i];
+		// calculate the hits on the arm
+		const sb hits = (friendly_board | enemy_board) & arm;
+
+		// return full arm if no hits
+		if (hits == 0) { continue; }
+
+		int hit_index = 0;
+
+		// get msb or lsb and build masks
+		if (arm > piece.position) {
+			// gets the trailing zeros of the board, giving the index of the first hit
+			hit_index = __builtin_ctzll(hits);
+		} else {
+			// Gets leading zeros of the board. To get the index, takes this value from 63 (max index of the board).
+			hit_index = 63 - __builtin_clzll(hits);
+		}
+
+		const sb hit_board = 0x1ULL << hit_index;
+
+		if (piece_lookup[hit_index] == 255) {
+			std::cerr << "Invalid piece lookup sent to get_observers" << std::endl;
+			return 0;
+		}
+
+		// get the piece that got hit
+		piece_data &hit_piece = hit_board & friendly_board
+			                        ? friendly_pieces[piece_lookup[hit_index]]
+			                        : enemy_pieces[piece_lookup[hit_index]];
+
+		// checks the type of the piece... if it is correct for the arm being checked, add it to observers
+		switch (hit_piece.type) {
+			case piece_type::BISHOP:
+				if ((i % 2)) { observers[observer_count++] = &hit_piece; }
+				break;
+			case piece_type::ROOK:
+				if (!(i % 2)) { observers[observer_count++] = &hit_piece; }
+				break;
+			case piece_type::QUEEN: {
+				observers[observer_count++] = &hit_piece;
+				break;
+			}
+			default: break;
+		}
+
+		// add the hit piece to rayed pieces
+		rayed_pieces[count++] = &hit_piece;
+	}
+
+	return observer_count;
+}
+
+// Get pieces using the queen's lookup_table. Returns just the rayed pieces.
+int game_data::ray_cast_observers_and_pinned(const piece_data &piece, const sb friendly_board, const sb enemy_board,
+                                             const lb<8> &table, std::array<piece_data *, 8> &observers) {
+	int observer_count = 0;
+
+	std::array<piece_data, 16> &friendly_pieces = piece.color == piece_color::WHITE ? white_pieces : black_pieces;
+	std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
+
+	for (int i = 0; i < 8; i++) {
+		const auto &arm = table[sb_to_int(piece.position)][i];
+		// calculate the hits on the arm
+		sb hits = (friendly_board | enemy_board) & arm;
+
+		// return full arm if no hits
+		if (hits == 0) { continue; }
+
+		int first_hit_index = 0;
+
+		// get msb or lsb and build masks
+		if (arm > piece.position) {
+			// gets the trailing zeros of the board, giving the index of the first hit
+			first_hit_index = __builtin_ctzll(hits);
+		} else {
+			// Gets leading zeros of the board. To get the index, takes this value from 63 (max index of the board).
+			first_hit_index = 63 - __builtin_clzll(hits);
+		}
+
+		const sb first_hit_board = 0x1ULL << first_hit_index;
+
+		if (piece_lookup[first_hit_index] == 255) {
+			std::cerr << "Invalid piece lookup sent to get_observers" << std::endl;
+			return 0;
+		}
+
+		// get the piece that got hit
+		piece_data &first_hit_piece = first_hit_board & friendly_board
+			                              ? friendly_pieces[piece_lookup[first_hit_index]]
+			                              : enemy_pieces[piece_lookup[first_hit_index]];
+
+		// checks the type of the piece... if it is correct for the arm being checked, add it to observers
+		switch (first_hit_piece.type) {
+			case piece_type::BISHOP:
+				if ((i % 2)) { observers[observer_count++] = &first_hit_piece; }
+				break;
+			case piece_type::ROOK:
+				if (!(i % 2)) { observers[observer_count++] = &first_hit_piece; }
+				break;
+			case piece_type::QUEEN: {
+				observers[observer_count++] = &first_hit_piece;
+				break;
+			}
+			default: break;
+		}
+
+		// check for a second hit
+		// remove the first hit from the hits
+		hits &= ~(0x1ULL << first_hit_index);
+
+		// checks if there is no second hit to check
+		if (hits == 0) { continue; }
+
+		// only need to calculate the second hit for pins... pins can only be on the same color piece as king
+		if (!((0x1ULL << first_hit_index) & friendly_board)) { continue; }
+
+		int second_hit_index = 0;
+
+		// if the arm has a value greater than the position, then we need the lsb else we need the msb
+		if (arm > piece.position) {
+			// gets the trailing zeros of the board, giving the index of the first hit
+			second_hit_index = __builtin_ctzll(hits);
+		} else {
+			// Gets leading zeros of the board. To get the index, takes this value from 63 (max index of the board).
+			second_hit_index = 63 - __builtin_clzll(hits);
+		}
+
+		const sb second_hit_board = 0x1ULL << second_hit_index;
+
+		if (piece_lookup[second_hit_index] == 255) {
+			std::cerr << "Invalid piece lookup sent to get_observers" << std::endl;
+			return 0;
+		}
+
+		// get the piece that got hit
+		piece_data &second_hit_piece = second_hit_board & friendly_board
+			                               ? friendly_pieces[piece_lookup[second_hit_index]]
+			                               : enemy_pieces[piece_lookup[second_hit_index]];
+
+		// checks the type of the piece... if it is correct for there to be a pin, then return as pinned_piece
+		switch (second_hit_piece.type) {
+			case piece_type::BISHOP:
+				if ((i % 2)) { first_hit_piece.pinner_id = second_hit_piece.id; }
+				break;
+			case piece_type::ROOK:
+				if (!(i % 2)) { first_hit_piece.pinner_id = second_hit_piece.id; }
+				break;
+			case piece_type::QUEEN: {
+				first_hit_piece.pinner_id = second_hit_piece.id;
+				break;
+			}
+			default: break;
+		}
+	}
+
+	return observer_count;
 }

@@ -86,14 +86,15 @@ private:
 
 	void capture(const piece_data &piece, sb new_pos);
 
-	void update_attacks(piece_data &piece, sb friendly_board, sb enemy_board,
-	                    const lookup_tables &lt);
+	void update_attacks(piece_data &piece, sb friendly_board, sb enemy_board, const lookup_tables &lt);
 
 	template<size_t N>
 	void update_sliders(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table);
 
-	int get_observers(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
-	                  std::array<piece_data *, 8> &observers);
-
-	// todo an update pins function that takes the double ray hits of the king (will run each king move)
+	int ray_cast_observers(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
+	                       std::array<piece_data *, 8> &observers);
+	int ray_cast_observers_and_rayed(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
+	                                 std::array<piece_data *, 8> &rayed_pieces, std::array<piece_data *, 8> &observers);
+	int ray_cast_observers_and_pinned(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
+	                                  std::array<piece_data *, 8> &observers);
 };
