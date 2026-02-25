@@ -169,8 +169,10 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 		update_attacks(*observers[i], *observer_friendly_board, *observer_enemy_board, lt);
 	}
 
-	// remove prev pins
-	for (const auto &rayed_piece: rayed_pieces) { rayed_piece->pinner_id = 255; }
+	// remove prev pins if the piece is the king moving
+	if (piece.type == piece_type::KING) {
+		for (const auto &rayed_piece: rayed_pieces) { rayed_piece->pinner_id = 255; }
+	}
 
 	// update position of the piece
 	piece.position = new_pos;
@@ -179,7 +181,11 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 
 	// collect new observer data and update pins
 	observers = std::array<piece_data *, 8>{};
-	num_observers = ray_cast_observers_and_pinned(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
+
+	// only get new pins of the piece moving is the king
+	if (piece.type == piece_type::KING) {
+		num_observers = ray_cast_observers_and_pinned(piece, *friendly_board, *enemy_board, lt.queen_table, observers);
+	} else { num_observers = ray_cast_observers(piece, *friendly_board, *enemy_board, lt.queen_table, observers); }
 
 	// update new observers
 	for (int i = 0; i < num_observers; i++) {
