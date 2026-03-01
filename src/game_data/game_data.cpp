@@ -160,8 +160,8 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	// collect prev observer data
 	std::array<piece_data *, 8> rayed_pieces;
 	std::array<piece_data *, 8> observers;
-	int num_observers = ray_cast_observers_and_rayed(piece, *friendly_board, *enemy_board, lt.queen_table, rayed_pieces,
-	                                                 observers);
+	auto [num_observers, num_rayed] = ray_cast_observers_and_rayed(piece, *friendly_board, *enemy_board, lt.queen_table,
+	                                                               rayed_pieces, observers);
 
 	// update prev observers
 	for (int i = 0; i < num_observers; i++) {
@@ -170,9 +170,8 @@ bool game_data::move(const sb prev_pos, const sb new_pos, const lookup_tables &l
 	}
 
 	// remove prev pins if the piece is the king moving
-	if (piece.type == piece_type::KING) {
-		for (const auto &rayed_piece: rayed_pieces) { rayed_piece->pinner_id = 255; }
-	}
+	if (piece.type == piece_type::KING) { for (int i = 0; i < num_rayed; i++) { rayed_pieces[i]->pinner_id = 255; } }
+	// todo need to make sure that the pinning pieces also get reset
 
 	// update position of the piece
 	piece.position = new_pos;
@@ -244,7 +243,7 @@ void game_data::update_attacks(piece_data &piece, const sb friendly_board, const
 			return;
 		} // pawn
 		case piece_type::BISHOP: {
-			update_sliders(piece, friendly_board, enemy_board, lt.bishop_table);
+			ray_cast_attacks(piece, friendly_board, enemy_board, lt.bishop_table);
 			return;
 		} // bishop
 		case piece_type::KNIGHT: {
@@ -252,11 +251,11 @@ void game_data::update_attacks(piece_data &piece, const sb friendly_board, const
 			return;
 		} // knight
 		case piece_type::ROOK: {
-			update_sliders(piece, friendly_board, enemy_board, lt.rook_table);
+			ray_cast_attacks(piece, friendly_board, enemy_board, lt.rook_table);
 			return;
 		} // rook
 		case piece_type::QUEEN: {
-			update_sliders(piece, friendly_board, enemy_board, lt.queen_table);
+			ray_cast_attacks(piece, friendly_board, enemy_board, lt.queen_table);
 			return;
 		} // queen
 		case piece_type::KING: {
@@ -279,9 +278,7 @@ void game_data::update_attacks(piece_data &piece, const sb friendly_board, const
  * @param table the lookup table for the piece
  */
 template<size_t N>
-void game_data::update_sliders(piece_data &piece, const sb friendly_board, const sb enemy_board, const lb<N> &table) {
-	piece.attacks = 0;
-
+void game_data::ray_cast_attacks(piece_data &piece, const sb friendly_board, const sb enemy_board, const lb<N> &table) {
 	// go through each arm
 	for (const auto &arm: table[sb_to_int(piece.position)]) {
 		// calculate the hits on the arm
@@ -296,6 +293,18 @@ void game_data::update_sliders(piece_data &piece, const sb friendly_board, const
 		int first_hit_index = 0;
 
 		sb mask = 0;
+
+		// if the piece is pinning another piece
+		if (piece.pinning_id != 255) {
+			std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
+
+			piece_data &pinning_piece = enemy_pieces[piece.pinning_id];
+
+			// reset the pinner_id on the pinned piece
+			pinning_piece.pinner_id = 255;
+
+			piece.pinning_id = 255;
+		}
 
 		// if the arm has a value greater than the position, then we need the lsb else we need the msb
 		if (arm > piece.position) {
@@ -336,28 +345,18 @@ void game_data::update_sliders(piece_data &piece, const sb friendly_board, const
 		if (arm > piece.position) {
 			// gets the trailing zeros of the board, giving the index of the first hit
 			second_hit_index = __builtin_ctzll(hits);
-
-			// Builds the mask for the first hit by shifting to the position of the first hit + 1
-			// (so the first hit is included), then subtracts one so the board fills with ones from the hit to the
-			// final bit. Because we want to save everything less significant than the hit, we are done.
-			mask = (0x1ULL << (first_hit_index + 1)) - 1;
 		} else {
 			// Gets leading zeros of the board. To get the index, takes this value from 63 (max index of the board).
 			second_hit_index = 63 - __builtin_clzll(hits);
-
-			// Here the mask will get all ones less significant than the hit, but we want the ones more significant.
-			// We do not add one this time but subtract one (to fill the board with ones from the hit to the final bit)
-			// and invert it. This will still keep the hit but will set all bits more significant than it to one.
-			mask = ~((0x1ULL << first_hit_index) - 1);
 		}
 
 		// if the second hit is the king, then the first piece is pinned
 		if (enemy_pieces[15].position & (0x1ULL << second_hit_index)) {
-			enemy_pieces[piece_lookup[first_hit_index]].pinner_id = piece.id;
+			piece_data &pinned_piece = enemy_pieces[piece_lookup[first_hit_index]];
+			pinned_piece.pinner_id = piece.id;
+			piece.pinning_id = pinned_piece.id;
 		}
 	}
-
-	// todo... need to make sure that any movement here removes the old pins on prev positions
 }
 
 int game_data::ray_cast_observers(const piece_data &piece, const sb friendly_board, const sb enemy_board,
@@ -419,11 +418,13 @@ int game_data::ray_cast_observers(const piece_data &piece, const sb friendly_boa
 
 
 // Overloaded get_rayed_pieces. Gets the rayed pieces and the observers where observers are sliders observing that square
-int game_data::ray_cast_observers_and_rayed(const piece_data &piece, const sb friendly_board, const sb enemy_board,
-                                            const lb<8> &table, std::array<piece_data *, 8> &rayed_pieces,
-                                            std::array<piece_data *, 8> &observers) {
-	int count = 0;
+std::pair<int, int> game_data::ray_cast_observers_and_rayed(const piece_data &piece, const sb friendly_board,
+                                                            const sb enemy_board,
+                                                            const lb<8> &table,
+                                                            std::array<piece_data *, 8> &rayed_pieces,
+                                                            std::array<piece_data *, 8> &observers) {
 	int observer_count = 0;
+	int rayed_count = 0;
 
 	std::array<piece_data, 16> &friendly_pieces = piece.color == piece_color::WHITE ? white_pieces : black_pieces;
 	std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
@@ -451,7 +452,7 @@ int game_data::ray_cast_observers_and_rayed(const piece_data &piece, const sb fr
 
 		if (piece_lookup[hit_index] == 255) {
 			std::cerr << "Invalid piece lookup sent to get_observers" << std::endl;
-			return 0;
+			return {0, 0};
 		}
 
 		// get the piece that got hit
@@ -475,16 +476,19 @@ int game_data::ray_cast_observers_and_rayed(const piece_data &piece, const sb fr
 		}
 
 		// add the hit piece to rayed pieces
-		rayed_pieces[count++] = &hit_piece;
+		rayed_pieces[rayed_count++] = &hit_piece;
 	}
 
-	return observer_count;
+	return {observer_count, rayed_count};
 }
 
 // Get pieces using the queen's lookup_table. Returns just the rayed pieces.
-int game_data::ray_cast_observers_and_pinned(const piece_data &piece, const sb friendly_board, const sb enemy_board,
-                                             const lb<8> &table, std::array<piece_data *, 8> &observers) {
+int game_data::ray_cast_observers_and_pinned(const piece_data &piece, const sb friendly_board,
+                                             const sb enemy_board, const lb<8> &table,
+                                             std::array<piece_data *, 8> &observers) {
 	int observer_count = 0;
+
+	// todo add some bool so that the second hit stuff doesnt run after a pin has been found... for efficiency ofc
 
 	std::array<piece_data, 16> &friendly_pieces = piece.color == piece_color::WHITE ? white_pieces : black_pieces;
 	std::array<piece_data, 16> &enemy_pieces = piece.color == piece_color::WHITE ? black_pieces : white_pieces;
@@ -571,13 +575,20 @@ int game_data::ray_cast_observers_and_pinned(const piece_data &piece, const sb f
 		// checks the type of the piece... if it is correct for there to be a pin, then return as pinned_piece
 		switch (second_hit_piece.type) {
 			case piece_type::BISHOP:
-				if ((i % 2)) { first_hit_piece.pinner_id = second_hit_piece.id; }
+				if ((i % 2)) {
+					first_hit_piece.pinner_id = second_hit_piece.id;
+					second_hit_piece.pinning_id = first_hit_piece.id;
+				}
 				break;
 			case piece_type::ROOK:
-				if (!(i % 2)) { first_hit_piece.pinner_id = second_hit_piece.id; }
+				if (!(i % 2)) {
+					first_hit_piece.pinner_id = second_hit_piece.id;
+					second_hit_piece.pinning_id = first_hit_piece.id;
+				}
 				break;
 			case piece_type::QUEEN: {
 				first_hit_piece.pinner_id = second_hit_piece.id;
+				second_hit_piece.pinning_id = first_hit_piece.id;
 				break;
 			}
 			default: break;

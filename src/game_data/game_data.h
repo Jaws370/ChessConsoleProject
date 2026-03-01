@@ -24,9 +24,10 @@ struct piece_data {
 	piece_color color;
 	uint8_t id; // the position of the piece in the piece arrays
 	uint8_t pinner_id; // the id if the piece pinning this piece... 255 if no pin
+	uint8_t pinning_id; // the id of the piece this piece is pinning... 255 if none
 
 	piece_data() : position(0), attacks(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
-	               pinner_id(255) {}
+	               pinner_id(255), pinning_id(255) {}
 
 	void set(const piece_type type, const piece_color color, const uint8_t id) {
 		attacks = position = 0;
@@ -89,12 +90,12 @@ private:
 	void update_attacks(piece_data &piece, sb friendly_board, sb enemy_board, const lookup_tables &lt);
 
 	template<size_t N>
-	void update_sliders(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table);
-
+	void ray_cast_attacks(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table);
 	int ray_cast_observers(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
 	                       std::array<piece_data *, 8> &observers);
-	int ray_cast_observers_and_rayed(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
-	                                 std::array<piece_data *, 8> &rayed_pieces, std::array<piece_data *, 8> &observers);
 	int ray_cast_observers_and_pinned(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
 	                                  std::array<piece_data *, 8> &observers);
+	std::pair<int, int> ray_cast_observers_and_rayed(const piece_data &piece, sb friendly_board, sb enemy_board,
+	                                                 const lb<8> &table, std::array<piece_data *, 8> &rayed_pieces,
+	                                                 std::array<piece_data *, 8> &observers);
 };
