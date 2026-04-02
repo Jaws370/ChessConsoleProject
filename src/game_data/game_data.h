@@ -24,10 +24,10 @@ struct piece_data {
 	piece_color color;
 	uint8_t id; // the position of the piece in the piece arrays
 	uint8_t pinner_id; // the id if the piece pinning this piece... 255 if no pin
-	uint8_t pinning_id; // the id of the piece this piece is pinning... 255 if none
+	bool is_slider;
 
 	piece_data() : position(0), attacks(0), type(piece_type::EMPTY), color(piece_color::NONE), id(0),
-	               pinner_id(255), pinning_id(255) {}
+	               pinner_id(255), is_slider(false) {}
 
 	void set(const piece_type type, const piece_color color, const uint8_t id) {
 		attacks = position = 0;
@@ -68,9 +68,20 @@ struct game_data {
 	std::array<piece_data, 16> white_pieces; // the last piece must be king
 	std::array<piece_data, 16> black_pieces; // the last piece must be king
 
-	bool move(sb prev_pos, sb new_pos, const lookup_tables &lt, const between_tables &bt);
+	void move(const int old_pos, const int new_pos, const game_data gd);
 
 private:
+	sb get_valid_moves(int pos, const lookup_tables &lookup_table, const between_tables &between_table);
+
+	sb pawn_logic(const piece_data &piece);
+	sb king_logic(const piece_data &piece, int pos, const lookup_tables &lookup_table);
+	sb slider_logic(const piece_data &piece, const lookup_tables &lookup_table,
+	                const between_tables &between_table);
+
+
+	piece_data *ray_cast_x1(sb arm, const piece_data &piece);
+	std::pair<piece_data *, piece_data *> ray_cast_x2(sb arm, const piece_data &piece);
+
 	static int sb_to_int(const sb board) { return __builtin_ctzll(board); }
 
 	piece_color get_color(const sb pos) const {
@@ -85,17 +96,10 @@ private:
 			       : std::pair{&black_board, &white_board};
 	}
 
-	void capture(const piece_data &piece, sb new_pos);
-
-	void update_attacks(piece_data &piece, sb friendly_board, sb enemy_board, const lookup_tables &lt);
-
-	template<size_t N>
-	void ray_cast_attacks(piece_data &piece, sb friendly_board, sb enemy_board, const lb<N> &table);
-	int ray_cast_observers(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
-	                       std::array<piece_data *, 8> &observers);
-	int ray_cast_observers_and_pinned(const piece_data &piece, sb friendly_board, sb enemy_board, const lb<8> &table,
-	                                  std::array<piece_data *, 8> &observers);
-	std::pair<int, int> ray_cast_observers_and_rayed(const piece_data &piece, sb friendly_board, sb enemy_board,
-	                                                 const lb<8> &table, std::array<piece_data *, 8> &rayed_pieces,
-	                                                 std::array<piece_data *, 8> &observers);
+	std::pair<std::array<piece_data, 16> *, std::array<piece_data, 16> *>
+	game_data::get_pieces(const piece_color color) {
+		return color == piece_color::WHITE
+			       ? std::pair{&white_pieces, &black_pieces}
+			       : std::pair{&black_pieces, &white_pieces};
+	}
 };
