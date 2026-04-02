@@ -3,51 +3,60 @@
 #include <algorithm>
 #include <span>
 
-void game_data::move(const int old_pos, const int new_pos, const game_data gd) {}
-
-sb game_data::get_valid_moves(const int pos, const lookup_tables &lookup_table, const between_tables &between_table) {
-	sb output{0};
-
-	// get the piece
-	piece_color piece_color{get_color(0x1ULL << pos)};
-	piece_data piece{piece_color ? white_pieces[piece_lookup[pos]] : black_pieces[piece_lookup[pos]]};
-
-	switch (piece.type) {
-		case piece_type::PAWN: {
-			output = pawn_logic(piece);
-			break;
-		}
-		case piece_type::KING: {
-			output = king_logic(piece, pos, lookup_table);
-			break;
-		}
-		case piece_type::KNIGHT: {
-			auto [friendly_board, enemy_board]{get_boards(piece_color)};
-			// set the output of the knight to the lookup table minus friendly pieces
-			output = lookup_table.knight_table[pos][0] & ~*friendly_board;
-			break;
-		}
-		case piece_type::BISHOP:
-		case piece_type::ROOK:
-		case piece_type::QUEEN: {
-			output = slider_logic(piece, lookup_table, between_table);
-			break;
-		}
-		default: break;
-	}
-
-	// if the piece is pinned
-	if (piece.pinner_id != 255) {
-		auto [friendly_pieces, enemy_pieces]{get_pieces(piece.color)};
-		// get the pinner
-		const piece_data &pinner{(*friendly_pieces)[piece.pinner_id]};
-
-		// because we can guarantee being pinned, valid moves must only be on the line between pinner and king
-		output &= between_table[sb_to_int(pinner.position)][sb_to_int((*friendly_pieces)[15].position)];
-	}
-
-	return output;
+piece_color game_data::get_color(const sb pos) const {
+	if (pos & white_board) { return piece_color::WHITE; }
+	if (pos & black_board) { return piece_color::BLACK; }
+	return piece_color::NONE;
 }
+
+std::pair<sb *, sb *> game_data::get_boards(const piece_color color) {
+	return color == piece_color::WHITE
+		       ? std::pair{&white_board, &black_board}
+		       : std::pair{&black_board, &white_board};
+}
+
+std::pair<std::array<piece_data, 16> *, std::array<piece_data, 16> *>
+game_data::get_pieces(const piece_color color) {
+	return color == piece_color::WHITE
+		       ? std::pair{&white_pieces, &black_pieces}
+		       : std::pair{&black_pieces, &white_pieces};
+}
+
+piece_data *game_data::ray_cast_x1(const sb arm, const piece_data &piece) {
+	auto [friendly_board, enemy_board]{get_boards(piece.color)};
+	auto [friendly_pieces, enemy_pieces]{get_pieces(piece.color)};
+
+	// calculate the hits on the arm
+	const sb hits{(*friendly_board | *enemy_board) & arm};
+
+	// return null if no hits
+	if (hits == 0) { return nullptr; }
+
+	int hit_index{0};
+
+	// get msb or lsb and build masks
+	if (arm > piece.position) {
+		// gets the trailing zeros of the board, giving the index of the first hit
+		hit_index = __builtin_ctzll(hits);
+	} else {
+		// gets leading zeros of the board; to get the index, takes this value from 63 (max index of the board)
+		hit_index = 63 - __builtin_clzll(hits);
+	}
+
+	const sb hit_board{0x1ULL << hit_index};
+
+	// get the pointer of the piece that got hit
+	piece_data *hit_ptr{
+		(hit_board & *friendly_board)
+			? &((*friendly_pieces)[piece_lookup[hit_index]])
+			: &((*enemy_pieces)[piece_lookup[hit_index]])
+	};
+
+	// return the pointer of the piece
+	return hit_ptr;
+}
+
+std::pair<piece_data *, piece_data *> game_data::ray_cast_x2(sb arm, const piece_data &piece) { return {}; }
 
 sb game_data::pawn_logic(const piece_data &piece) {
 	sb output{0};
@@ -125,7 +134,7 @@ sb game_data::king_logic(const piece_data &piece, const int pos, const lookup_ta
 sb game_data::slider_logic(const piece_data &piece, const lookup_tables &lookup_table,
                            const between_tables &between_table) {
 	sb output{0};
-	std::span<const sb> lt;
+	std::span<const sb> lt{};
 
 	// assign the correct lookup table for the piece trying to move
 	switch (piece.type) {
@@ -154,7 +163,7 @@ sb game_data::slider_logic(const piece_data &piece, const lookup_tables &lookup_
 			continue;
 		}
 		const piece_data hit = *hit_ptr;
-		// create the possible move set as being the moves between the two positions
+		// create the possible move set as being the moves between the two positions (first removed, last sometimes)
 		output = between_table[sb_to_int(piece.position)][sb_to_int(hit.position)] & ~(
 			         piece.position | (piece.color == hit.color ? hit.position : 0x0ULL));
 	}
@@ -162,39 +171,48 @@ sb game_data::slider_logic(const piece_data &piece, const lookup_tables &lookup_
 	return output;
 }
 
+sb game_data::get_valid_moves(const int pos, const lookup_tables &lookup_table, const between_tables &between_table) {
+	sb output{0};
 
-piece_data *game_data::ray_cast_x1(const sb arm, const piece_data &piece) {
-	auto [friendly_board, enemy_board]{get_boards(piece.color)};
-	auto [friendly_pieces, enemy_pieces]{get_pieces(piece.color)};
+	// get the piece
+	piece_color piece_color{get_color(0x1ULL << pos)};
+	piece_data piece{piece_color ? white_pieces[piece_lookup[pos]] : black_pieces[piece_lookup[pos]]};
 
-	// calculate the hits on the arm
-	const sb hits{(*friendly_board | *enemy_board) & arm};
-
-	// return null if no hits
-	if (hits == 0) { return nullptr; }
-
-	int hit_index{0};
-
-	// get msb or lsb and build masks
-	if (arm > piece.position) {
-		// gets the trailing zeros of the board, giving the index of the first hit
-		hit_index = __builtin_ctzll(hits);
-	} else {
-		// gets leading zeros of the board; to get the index, takes this value from 63 (max index of the board)
-		hit_index = 63 - __builtin_clzll(hits);
+	switch (piece.type) {
+		case piece_type::PAWN: {
+			output = pawn_logic(piece);
+			break;
+		}
+		case piece_type::KING: {
+			output = king_logic(piece, pos, lookup_table);
+			break;
+		}
+		case piece_type::KNIGHT: {
+			auto [friendly_board, enemy_board]{get_boards(piece_color)};
+			// set the output of the knight to the lookup table minus friendly pieces
+			output = lookup_table.knight_table[pos][0] & ~*friendly_board;
+			break;
+		}
+		case piece_type::BISHOP:
+		case piece_type::ROOK:
+		case piece_type::QUEEN: {
+			output = slider_logic(piece, lookup_table, between_table);
+			break;
+		}
+		default: break;
 	}
 
-	const sb hit_board{0x1ULL << hit_index};
+	// if the piece is pinned
+	if (piece.pinner_id != 255) {
+		auto [friendly_pieces, enemy_pieces]{get_pieces(piece.color)};
+		// get the pinner
+		const piece_data &pinner{(*friendly_pieces)[piece.pinner_id]};
 
-	// get the pointer of the piece that got hit
-	piece_data *hit_ptr{
-		(hit_board & *friendly_board)
-			? &((*friendly_pieces)[piece_lookup[hit_index]])
-			: &((*enemy_pieces)[piece_lookup[hit_index]])
-	};
+		// because we can guarantee being pinned, valid moves must only be on the line between pinner and king
+		output &= between_table[sb_to_int(pinner.position)][sb_to_int((*friendly_pieces)[15].position)];
+	}
 
-	// return the pointer of the piece
-	return hit_ptr;
+	return output;
 }
 
-std::pair<piece_data *, piece_data *> game_data::ray_cast_x2(sb arm, const piece_data &piece) { return {}; }
+void game_data::move(const int old_pos, const int new_pos) {}
