@@ -16,7 +16,7 @@ class game_data {
 
 	static int sb_to_int(const sb board) { return __builtin_ctzll(board); }
 
-	piece_color get_color(const sb pos) const;
+	piece_color get_color(sb pos) const;
 	std::pair<sb *, sb *> get_boards(piece_color color);
 	std::pair<std::array<piece_data, 16> *, std::array<piece_data, 16> *> get_pieces(piece_color color);
 

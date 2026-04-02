@@ -55,7 +55,64 @@ piece_data *game_data::ray_cast_x1(const sb arm, const piece_data &piece) {
 	return hit_ptr;
 }
 
-std::pair<piece_data *, piece_data *> game_data::ray_cast_x2(sb arm, const piece_data &piece) { return {}; }
+std::pair<piece_data *, piece_data *> game_data::ray_cast_x2(const sb arm, const piece_data &piece) {
+	auto [friendly_board, enemy_board]{get_boards(piece.color)};
+	auto [friendly_pieces, enemy_pieces]{get_pieces(piece.color)};
+
+	// calculate the hits on the arm
+	sb hits{(*friendly_board | *enemy_board) & arm};
+
+	// return null if no hits
+	if (hits == 0) { return std::pair{nullptr, nullptr}; }
+
+	int first_hit_index{0};
+
+	// get msb or lsb and build masks
+	if (arm > piece.position) {
+		// gets the trailing zeros of the board, giving the index of the first hit
+		first_hit_index = __builtin_ctzll(hits);
+	} else {
+		// gets leading zeros of the board; to get the index, takes this value from 63 (max index of the board)
+		first_hit_index = 63 - __builtin_clzll(hits);
+	}
+
+	sb hit_board{0x1ULL << first_hit_index};
+
+	// get the pointer of the piece that got hit
+	piece_data *first_hit_ptr{
+		(hit_board & *friendly_board)
+			? &((*friendly_pieces)[piece_lookup[first_hit_index]])
+			: &((*enemy_pieces)[piece_lookup[first_hit_index]])
+	};
+
+	hits &= ~hit_board;
+
+	// return first_hit if no hits
+	if (hits == 0) { return std::pair{first_hit_ptr, nullptr}; }
+
+	int second_hit_index{0};
+
+	// get msb or lsb and build masks
+	if (arm > piece.position) {
+		// gets the trailing zeros of the board, giving the index of the first hit
+		second_hit_index = __builtin_ctzll(hits);
+	} else {
+		// gets leading zeros of the board; to get the index, takes this value from 63 (max index of the board)
+		second_hit_index = 63 - __builtin_clzll(hits);
+	}
+
+	hit_board = 0x1ULL << second_hit_index;
+
+	// get the pointer of the piece that got hit
+	piece_data *second_hit_ptr{
+		(hit_board & *friendly_board)
+			? &((*friendly_pieces)[piece_lookup[second_hit_index]])
+			: &((*enemy_pieces)[piece_lookup[second_hit_index]])
+	};
+
+	// return the pointer of the piece
+	return std::pair{first_hit_ptr, second_hit_ptr};
+}
 
 sb game_data::pawn_logic(const piece_data &piece) {
 	sb output{0};
