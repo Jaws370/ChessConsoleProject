@@ -1,6 +1,7 @@
 #include "../include/chess.h"
 
 #include <iostream>
+#include <random>
 #include <unordered_map>
 #include <bits/ostream.tcc>
 
@@ -382,4 +383,12 @@ chess::chess(const std::string &fen) {
 
 	// init the util tables
 	table_init();
+
+	// randomly assign colors
+	std::mt19937 rng(std::random_device{}());
+	std::uniform_int_distribution<int> dist(0, 1);
+	int color = dist(rng);
+
+	p1_color = static_cast<piece_color>(color);
+	p2_color = static_cast<piece_color>(1 - color);
 }
