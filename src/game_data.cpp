@@ -1,6 +1,5 @@
 #include "../include/game_data.h"
 
-#include <algorithm>
 #include <span>
 
 piece_color game_data::get_color(const sb pos) const {

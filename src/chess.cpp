@@ -3,7 +3,6 @@
 #include <iostream>
 #include <random>
 #include <unordered_map>
-#include <bits/ostream.tcc>
 
 void chess::set_game_data(const std::string &fen) {
 	std::array<uint8_t, 12> b_boards{};

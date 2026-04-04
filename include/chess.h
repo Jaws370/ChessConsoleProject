@@ -8,8 +8,8 @@
 class chess {
 	game_data gd;
 
-	piece_color p1_color{piece_color::NONE};
-	piece_color p2_color{piece_color::NONE};
+	piece_color p1_color;
+	piece_color p2_color;
 
 	lookup_tables lookup_table;
 	between_tables between_table;
