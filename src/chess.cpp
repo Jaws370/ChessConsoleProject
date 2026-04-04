@@ -81,14 +81,50 @@ void chess::table_init() {
 	// generate all the arms starting left then going clockwise
 	for (int i{0}; i < 64; i++) {
 		const sb pos{0x1ULL << i};
-		constexpr sb edges{0xFF818181818181FFULL};
 		constexpr std::array directions{1, 9, 8, 7, -1, -9, -8, -7};
+
+		// edge masks
+		constexpr sb top_edge{0xFF00000000000000ULL};
+		constexpr sb bottom_edge{0x00000000000000FFULL};
+		constexpr sb right_edge{0x8080808080808080ULL};
+		constexpr sb left_edge{0x0101010101010101ULL};
+		sb edges{top_edge | bottom_edge | right_edge | left_edge};
+
+		std::array<int, 8> direction_skip_set{0};
+
+		if (pos & top_edge) {
+			edges &= ~top_edge;
+			direction_skip_set[1] = direction_skip_set[2] = direction_skip_set[3] = 1;
+		}
+
+		if (pos & bottom_edge) {
+			edges &= ~bottom_edge;
+			direction_skip_set[5] = direction_skip_set[6] = direction_skip_set[7] = 1;
+		}
+
+		if (pos & right_edge) {
+			edges &= ~right_edge;
+			direction_skip_set[3] = direction_skip_set[4] = direction_skip_set[5] = 1;
+		}
+
+		if (pos & left_edge) {
+			edges &= ~left_edge;
+			direction_skip_set[0] = direction_skip_set[1] = direction_skip_set[7] = 1;
+		}
 
 		for (int j{0}; j < 8; j++) {
 			sb temp_pos{pos};
+
+			if (direction_skip_set[j] == 1) { continue; }
+
 			while (true) {
 				if (temp_pos & edges) { break; }
-				temp_pos = temp_pos << directions[j];
+
+				// shift temp_board over
+				if (directions[j] > 0) { temp_pos = temp_pos << directions[j]; } else {
+					temp_pos = temp_pos >> -directions[j];
+				}
+
 				default_table[i][j] |= temp_pos;
 			}
 		}
@@ -115,27 +151,31 @@ void chess::table_init() {
 	for (int i{0}; i < 64; i++) {
 		const sb pos{0x1ULL << i};
 
+		// edge masks
+		constexpr sb top_edge{0xFFFF000000000000ULL};
+		constexpr sb bottom_edge{0x000000000000FFFFULL};
+		constexpr sb right_edge{0xC0C0C0C0C0C0C0C0ULL};
+		constexpr sb left_edge{0x0303030303030303ULL};
+
 		for (int j{0}; j < 8; j++) {
 			// directions of movement
 			constexpr std::array directions{10, 17, 15, 6, -10, -17, -15, -6};
 
-			// edge masks
-			constexpr sb top_edge{0xFFFF000000000000ULL};
-			constexpr sb bottom_edge{0x000000000000FFFFULL};
-			constexpr sb right_edge{0xB0B0B0B0B0B0B0B0ULL};
-			constexpr sb left_edge{0x0303030303030303ULL};
+			// if on the top, skip any index going out of bounds
+			if ((pos & top_edge) && (i + directions[j] > 63)) { continue; }
+			// if on the bottom, skip any index going out of bounds
+			if ((pos & bottom_edge) && (i + directions[j] < 0)) { continue; }
 
-			// if on the left, skip index 0 and 7
-			if ((pos & left_edge) && (j == 0 || j == 7)) { continue; }
-			// if on the right, skip index 3 and 4
-			if ((pos & right_edge) && (j == 3 || j == 4)) { continue; }
-			// if on the top, skip index 1 and 2
-			if ((pos & top_edge) && (j == 1 || j == 2)) { continue; }
-			// if on the bottom, skip index 5 and 6
-			if ((pos & bottom_edge) && (j == 5 || j == 6)) { continue; }
-
-			lookup_table.knight_table[i][0] |= pos << directions[j];
+			// add the position to the table
+			if (directions[j] > 0) { lookup_table.knight_table[i][0] |= pos << directions[j]; } else {
+				lookup_table.knight_table[i][0] |= pos >> -directions[j];
+			}
 		}
+
+		// mask out opposite edge
+		if (pos & right_edge) { lookup_table.knight_table[i][0] &= ~left_edge; }
+
+		if (pos & left_edge) { lookup_table.knight_table[i][0] &= ~right_edge; }
 	}
 
 	// king lookup table
@@ -161,17 +201,19 @@ void chess::table_init() {
 			// if on the bottom, skip index 5 and 6 and 7
 			if ((pos & bottom_edge) && (j == 5 || j == 6 || j == 7)) { continue; }
 
-			lookup_table.king_table[i][0] |= pos << directions[j];
+			if (directions[j] > 0) { lookup_table.king_table[i][0] |= pos << directions[j]; } else {
+				lookup_table.king_table[i][0] |= pos >> -directions[j];
+			}
 		}
 	}
 
 	// between table
 	for (int i{0}; i < 64; i++) {
-		const int pos1 = 0x1ULL << i;
+		const sb pos1 = 0x1ULL << i;
 		for (int j{0}; j < 64; j++) {
 			if (i == j) { continue; }
 
-			const int pos2 = 0x1ULL << j;
+			const sb pos2 = 0x1ULL << j;
 
 			// if already filled, continue
 			if (between_table[i][j] != 0) { continue; }
