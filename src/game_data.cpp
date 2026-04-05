@@ -1,6 +1,7 @@
 #include "../include/game_data.h"
 
 #include <span>
+#include <unordered_map>
 
 piece_color game_data::get_color(const sb pos) const {
 	if (pos & white_board) { return piece_color::WHITE; }
@@ -231,7 +232,9 @@ sb game_data::get_valid_moves(const int pos, const lookup_tables &lookup_table, 
 
 	// get the piece
 	piece_color piece_color{get_color(sb{1} << pos)};
-	const piece_data piece{piece_color ? white_pieces[piece_lookup[pos]] : black_pieces[piece_lookup[pos]]};
+	const piece_data piece{
+		piece_color == piece_color::WHITE ? white_pieces[piece_lookup[pos]] : black_pieces[piece_lookup[pos]]
+	};
 
 	switch (piece.type) {
 		case piece_type::PAWN: {
@@ -274,7 +277,9 @@ void game_data::move(const int old_pos, const int new_pos, const lookup_tables &
                      const between_tables &between_table) {
 	// get the piece
 	piece_color piece_color{get_color(sb{1} << old_pos)};
-	piece_data *piece{piece_color ? &white_pieces[piece_lookup[old_pos]] : &black_pieces[piece_lookup[old_pos]]};
+	piece_data *piece{
+		piece_color == piece_color::WHITE ? &white_pieces[piece_lookup[old_pos]] : &black_pieces[piece_lookup[old_pos]]
+	};
 
 	// remove all prev pins if king moves
 	if (piece->type == piece_type::KING) {
@@ -293,7 +298,7 @@ void game_data::move(const int old_pos, const int new_pos, const lookup_tables &
 	// update captured piece
 	if (piece_lookup[new_pos] != 255) {
 		// get the captured piece (will always be the opposite color)
-		piece_data *captured_piece = piece_color
+		piece_data *captured_piece = piece_color == piece_color::WHITE
 			                             ? &black_pieces[piece_lookup[old_pos]]
 			                             : &white_pieces[piece_lookup[old_pos]];
 		*enemy_board &= ~captured_piece->position;
@@ -354,4 +359,139 @@ int game_data::evaluate_position() const {
 	for (const auto &piece: black_pieces) { eval -= piece.value; }
 
 	return eval;
+}
+
+std::string game_data::get() const {
+	std::string output;
+	const sb full_board{white_board | black_board};
+
+	int counter{0};
+
+	for (int i{63}; i >= 0; i--) {
+		const sb temp_pos = sb{1} << i;
+
+		if (i % 8 == 7 && i != 63) {
+			if (counter != 0) {
+				output += std::to_string(counter);
+				counter = 0;
+			}
+
+			output += '/';
+		}
+
+		if (full_board & temp_pos) {
+			if (counter != 0) {
+				output += std::to_string(counter);
+				counter = 0;
+			}
+
+			// get the piece
+			piece_color piece_color{get_color(temp_pos)};
+			const piece_data piece{
+				piece_color == piece_color::WHITE ? white_pieces[piece_lookup[i]] : black_pieces[piece_lookup[i]]
+			};
+
+			constexpr char piece_chars[] = {'P', 'N', 'B', 'R', 'Q', 'K'};
+
+			// dictionary for piece characters
+			char c{piece_chars[static_cast<int>(piece.type)]};
+
+			// if the piece is black, set to lower case
+			if (piece_color == piece_color::BLACK) { c = std::tolower(c); }
+
+			output += c;
+		} else { counter++; }
+	}
+
+	if (counter != 0) { output += std::to_string(counter); }
+
+	return output;
+}
+
+
+void game_data::set(const std::string &fen) {
+	// reset all old data
+	white_board = 0;
+	black_board = 0;
+	white_pieces = {};
+	black_pieces = {};
+	std::fill(piece_lookup.begin(), piece_lookup.end(), 255);
+
+	std::array<sb, 12> b_boards{};
+
+	// dictionary for piece characters
+	std::unordered_map<char, int> char_lookup{{'P', 0}, {'N', 1}, {'B', 2}, {'R', 3}, {'Q', 4}, {'K', 5}};
+
+	// loop through fen string
+	int pos{63};
+	for (const char c: fen) {
+		// skip over formatting
+		if (c == '/') { continue; }
+
+		// go through empty positons
+		if (isdigit(c)) {
+			pos -= c - '0';
+			continue;
+		}
+
+		// get the correct board index
+		int board{0};
+		if (std::isupper(c)) { board = 6; }
+		board += char_lookup[std::toupper(c)];
+
+		// adds the piece to bit board
+		b_boards[board] |= sb{1} << pos;
+
+		pos--;
+	}
+
+	int white_piece_count{0};
+	int black_piece_count{0};
+
+	// create the piece arrays
+	for (int i{0}; i < 12; i++) {
+		while (b_boards[i]) {
+			// get the index of the piece in the bit board
+			const int b_pos{__builtin_ctzll(b_boards[i])};
+
+			// if i >= 6, this is a white board else black
+			if (i >= 6) {
+				// set color board, color pieces, and piece_lookup
+				white_board |= sb{1} << b_pos;
+				piece_lookup[b_pos] = white_piece_count;
+
+				// king must go last
+				if (i == 11) {
+					piece_lookup[b_pos] = 15;
+					white_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
+					                              piece_color::WHITE, 15);
+					b_boards[i] &= ~(sb{1} << b_pos);
+					continue;
+				}
+
+				white_pieces[white_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
+				                                             piece_color::WHITE, white_piece_count);
+				white_piece_count++;
+			} else {
+				// set color board, color pieces, and piece_lookup
+				black_board |= sb{1} << b_pos;
+				piece_lookup[b_pos] = black_piece_count;
+
+				// king must go last
+				if (i == 5) {
+					piece_lookup[b_pos] = 15;
+					black_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
+					                              piece_color::BLACK, 15);
+					b_boards[i] &= ~(sb{1} << b_pos);
+					continue;
+				}
+
+				black_pieces[black_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
+				                                             piece_color::BLACK, black_piece_count);
+				black_piece_count++;
+			}
+
+			b_boards[i] &= ~(sb{1} << b_pos);
+		}
+	}
 }

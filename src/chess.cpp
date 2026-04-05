@@ -2,79 +2,6 @@
 
 #include <iostream>
 #include <random>
-#include <unordered_map>
-
-void chess::set_game_data(const std::string &fen) {
-	std::array<uint8_t, 12> b_boards{};
-
-	// dictionary for piece characters
-	std::unordered_map<char, int> piece_lookup{{'P', 0}, {'N', 1}, {'B', 2}, {'R', 3}, {'Q', 4}, {'K', 5}};
-
-	// loop through fen string
-	int pos{0};
-	for (const char c: fen) {
-		// skip over formatting
-		if (c == '/') { continue; }
-
-		// go through empty positons
-		if (isdigit(c)) {
-			pos += c - '0';
-			continue;
-		}
-
-		// get the correct board index
-		int board{0};
-		if (!std::isupper(c)) { board = 6; }
-		board += piece_lookup[std::toupper(c)];
-
-		// adds the piece to bit board
-		b_boards[board] |= sb{1} << pos;
-
-		pos++;
-	}
-
-	int white_piece_count{0};
-	int black_piece_count{0};
-
-	// create the piece arrays
-	for (int i{0}; i < 12; i++) {
-		// get the index of the piece in the bit board
-		const int b_pos{__builtin_ctzll(b_boards[i])};
-
-		// if i >= 6, this is a white board else black
-		if (i >= 6) {
-			// set color board, color pieces, and piece_lookup
-			gd.white_board |= sb{1} << b_pos;
-			gd.piece_lookup[b_pos] = white_piece_count;
-
-			// king must go last
-			if (i == 11) {
-				gd.white_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
-				                                 piece_color::WHITE, 15);
-				continue;
-			}
-
-			gd.white_pieces[white_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
-			                                                piece_color::WHITE, white_piece_count);
-			white_piece_count++;
-		} else {
-			// set color board, color pieces, and piece_lookup
-			gd.black_board |= sb{1} << b_pos;
-			gd.piece_lookup[b_pos] = black_piece_count;
-
-			// king must go last
-			if (i == 5) {
-				gd.black_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
-				                                 piece_color::WHITE, 15);
-				continue;
-			}
-
-			gd.black_pieces[black_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
-			                                                piece_color::BLACK, black_piece_count);
-			black_piece_count++;
-		}
-	}
-}
 
 void chess::table_init() {
 	std::array<std::array<sb, 8>, 64> default_table{};
@@ -119,7 +46,7 @@ void chess::table_init() {
 			if (direction_skip_set[j] == 1) { continue; }
 
 			while (true) {
-				if (temp_pos & edges) { break; }
+				if (!temp_pos || temp_pos & edges) { break; }
 
 				// shift temp_board over
 				if (directions[j] > 0) { temp_pos = temp_pos << directions[j]; } else {
@@ -373,13 +300,7 @@ void chess::ai_move(const int depth) {
 	move(best_move.first, best_move.second);
 }
 
-chess::chess(const std::string &fen) {
-	// set to default position
-	gd = game_data();
-
-	// set the game data
-	set_game_data(fen);
-
+chess::chess(const std::string &fen): gd(fen) {
 	// init the util tables
 	table_init();
 

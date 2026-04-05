@@ -62,6 +62,9 @@ struct piece_data {
 		// todo somehow set the attacks of all pieces after init
 	}
 
+	piece_data() : position(0), attacks(0), type(piece_type::EMPTY), color(piece_color::NONE), id(255), pinner_id(255),
+	               is_slider(false), value(0) {};
+
 	void set(const uint64_t position, const piece_type type, const piece_color color, const uint8_t id) {
 		attacks = 0;
 		this->position = position;

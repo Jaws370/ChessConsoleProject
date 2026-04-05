@@ -2,6 +2,8 @@
 
 #include "types.h"
 
+#include <string>
+
 class game_data {
 	sb pawn_logic(const piece_data &piece);
 	sb king_logic(const piece_data &piece, int pos, const lookup_tables &lookup_table);
@@ -25,7 +27,10 @@ public:
 	std::array<piece_data, 16> white_pieces; // the last piece must be king
 	std::array<piece_data, 16> black_pieces; // the last piece must be king
 
-	game_data(): white_board(0), black_board(0), piece_lookup(), white_pieces(), black_pieces() {} ;
+	explicit game_data(const std::string &fen) { set(fen); }
+
+	std::string get() const;
+	void set(const std::string &fen);
 
 	int evaluate_position() const;
 
