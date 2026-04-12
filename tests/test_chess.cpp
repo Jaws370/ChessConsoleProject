@@ -26,6 +26,19 @@ bool test_valid_moves(const sb board, const sb correct_board, const std::string 
 	return false;
 }
 
+bool test_check_moves(const bool result, const bool correct_result, const std::string &test_name) {
+	if (result == correct_result) {
+		std::cout << "[PASSED] " << test_name << std::endl;
+		return true;
+	}
+
+	std::cout << "[FAILED] " << test_name << std::endl;
+	std::cout << (result ? "true" : "false") << std::endl << "output should be: " << (correct_result ? "true" : "false")
+			<< std::endl;
+
+	return false;
+}
+
 int main() {
 	std::string failed_tests;
 	int passed{0};
@@ -1842,16 +1855,6 @@ int main() {
 	}
 	total++;
 
-	// 4. Double check - Queen cannot block or capture (Correct as originally written)
-	// Valid squares: []
-	game.set_board("4k3/3q4/4QN2/8/8/8/8/7K b - - 0 1");
-	test_name = "4. Double check - Queen cannot block or capture";
-	correct_board = 0x0000000000000000ULL;
-	if (test_valid_moves(game.get_valid_moves(52), correct_board, test_name)) { passed++; } else {
-		failed_tests += test_name + "\n";
-	}
-	total++;
-
 	// 5. Pinned piece cannot capture pinner to resolve check (Fixed FEN)
 	// Setup: Black King e8, Black Knight e5 pinned by White Rook e1. White Q d7 checks e8.
 	// Valid squares: [] (Knight cannot capture Q on d7 because it breaks the e-file pin)
@@ -2010,6 +2013,22 @@ int main() {
 	test_name = "20. Pawn double push blocked by FRIENDLY piece";
 	correct_board = 0x0000000000000000ULL;
 	if (test_valid_moves(game.get_valid_moves(15), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	game = chess();
+	test_name = "check if pawn can move one space";
+	bool correct_result = true;
+	if (test_check_moves(game.check_move(8, 16), correct_result, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	game.set_board("4k3/3q4/4QN2/8/8/8/8/7K b - - 0 1");
+	test_name = "4. Double check - Queen cannot block or capture";
+	correct_result = false;
+	if (test_check_moves(game.check_move(52, 55), correct_result, test_name)) { passed++; } else {
 		failed_tests += test_name + "\n";
 	}
 	total++;

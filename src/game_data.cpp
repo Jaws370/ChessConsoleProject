@@ -3,6 +3,145 @@
 #include <span>
 #include <unordered_map>
 
+std::string game_data::get() const {
+	std::string output;
+	const sb full_board{white_board | black_board};
+
+	int counter{0};
+
+	for (int i{63}; i >= 0; i--) {
+		const sb temp_pos = sb{1} << i;
+
+		if (i % 8 == 7 && i != 63) {
+			if (counter != 0) {
+				output += std::to_string(counter);
+				counter = 0;
+			}
+
+			output += '/';
+		}
+
+		if (full_board & temp_pos) {
+			if (counter != 0) {
+				output += std::to_string(counter);
+				counter = 0;
+			}
+
+			// get the piece
+			const piece_color piece_color{get_color(temp_pos)};
+			const piece_data piece{
+				piece_color == piece_color::WHITE ? white_pieces[piece_lookup[i]] : black_pieces[piece_lookup[i]]
+			};
+
+			constexpr char piece_chars[] = {'P', 'B', 'N', 'R', 'Q', 'K'};
+
+			// dictionary for piece characters
+			char c{piece_chars[static_cast<int>(piece.type)]};
+
+			// if the piece is black, set to lower case
+			if (piece_color == piece_color::BLACK) { c = static_cast<char>(std::tolower(c)); }
+
+			output += c;
+		} else { counter++; }
+	}
+
+	if (counter != 0) { output += std::to_string(counter); }
+
+	return output;
+}
+
+void game_data::set(const std::string &fen, const lookup_tables &lookup_table, const between_tables &between_table) {
+	// reset all old data
+	white_board = 0;
+	black_board = 0;
+	white_pieces = {};
+	black_pieces = {};
+	std::fill(piece_lookup.begin(), piece_lookup.end(), 255);
+
+	std::array<sb, 12> b_boards{};
+
+	// dictionary for piece characters
+	std::unordered_map<char, int> char_lookup{{'P', 0}, {'B', 1}, {'N', 2}, {'R', 3}, {'Q', 4}, {'K', 5}};
+
+	// loop through fen string
+	int pos{63};
+	for (const char c: fen) {
+		// skip over formatting
+		if (c == '/') { continue; }
+
+		// go through empty positons
+		if (isdigit(c)) {
+			pos -= c - '0';
+			continue;
+		}
+
+		// get the correct board index
+		int board{0};
+		if (std::isupper(c)) { board = 6; }
+		board += char_lookup[static_cast<char>(std::toupper(c))];
+
+		// adds the piece to bit board
+		b_boards[board] |= sb{1} << pos;
+
+		pos--;
+	}
+
+	int white_piece_count{0};
+	int black_piece_count{0};
+
+	// create the piece arrays
+	for (int i{0}; i < 12; i++) {
+		while (b_boards[i]) {
+			// get the index of the piece in the bit board
+			const int b_pos{__builtin_ctzll(b_boards[i])};
+
+			// if i >= 6, this is a white board else black
+			if (i >= 6) {
+				// set color board, color pieces, and piece_lookup
+				white_board |= sb{1} << b_pos;
+				piece_lookup[b_pos] = white_piece_count;
+
+				// king must go last
+				if (i == 11) {
+					piece_lookup[b_pos] = 15;
+					white_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
+					                              piece_color::WHITE, 15);
+					b_boards[i] &= ~(sb{1} << b_pos);
+					continue;
+				}
+
+				white_pieces[white_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
+				                                             piece_color::WHITE, white_piece_count);
+				white_piece_count++;
+			} else {
+				// set color board, color pieces, and piece_lookup
+				black_board |= sb{1} << b_pos;
+				piece_lookup[b_pos] = black_piece_count;
+
+				// king must go last
+				if (i == 5) {
+					piece_lookup[b_pos] = 15;
+					black_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
+					                              piece_color::BLACK, 15);
+					b_boards[i] &= ~(sb{1} << b_pos);
+					continue;
+				}
+
+				black_pieces[black_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
+				                                             piece_color::BLACK, black_piece_count);
+				black_piece_count++;
+			}
+
+			b_boards[i] &= ~(sb{1} << b_pos);
+		}
+	}
+
+	update_attack_boards(lookup_table, between_table);
+
+	update_pins(white_pieces, lookup_table);
+	update_pins(black_pieces, lookup_table);
+}
+
 piece_color game_data::get_color(const sb pos) const {
 	if (pos & white_board) { return piece_color::WHITE; }
 	if (pos & black_board) { return piece_color::BLACK; }
@@ -280,11 +419,37 @@ void game_data::update_attack_boards(const lookup_tables &lookup_table, const be
 	}
 }
 
+void game_data::update_pins(auto &piece_set, const auto &table) {
+	// iterate over all arms for the king
+	if (piece_set[15].position != 0) {
+		for (const auto arm: table.queen_table[sb_to_int(piece_set[15].position)]) {
+			// cast out rays
+			auto [fst, snd] = ray_cast_x2(arm, piece_set[15]);
+			// continue of not enough pieces on the arm
+			if (!snd || !fst) { continue; }
+			// check if the piece could be a pinner
+			if (!snd->is_slider || snd->color == piece_set[15].color) { continue; }
+			// if the second rayed piece has attacks along arm towards king
+			if (snd->attacks & arm) {
+				// the first rayed piece is pinned
+				fst->pinner_id = snd->id;
+			}
+		}
+	}
+}
+
+int game_data::evaluate_position() const {
+	int eval = 0;
+	// count up material
+	for (const auto &piece: white_pieces) { eval += piece.value; }
+
+	for (const auto &piece: black_pieces) { eval -= piece.value; }
+
+	return eval;
+}
+
 sb game_data::get_valid_moves(const int pos, const lookup_tables &lookup_table, const between_tables &between_table) {
 	sb output{0};
-
-	// TODO need to check for checks and make sure that this move relieves the check
-
 	// get the piece
 	const piece_color piece_color{get_color(sb{1} << pos)};
 	const piece_data piece{
@@ -381,179 +546,4 @@ void game_data::move(const int old_pos, const int new_pos, const lookup_tables &
 
 	update_pins(*friendly_pieces, lookup_table);
 	update_pins(*enemy_pieces, lookup_table);
-}
-
-int game_data::evaluate_position() const {
-	int eval = 0;
-	// count up material
-	for (const auto &piece: white_pieces) { eval += piece.value; }
-
-	for (const auto &piece: black_pieces) { eval -= piece.value; }
-
-	return eval;
-}
-
-std::string game_data::get() const {
-	std::string output;
-	const sb full_board{white_board | black_board};
-
-	int counter{0};
-
-	for (int i{63}; i >= 0; i--) {
-		const sb temp_pos = sb{1} << i;
-
-		if (i % 8 == 7 && i != 63) {
-			if (counter != 0) {
-				output += std::to_string(counter);
-				counter = 0;
-			}
-
-			output += '/';
-		}
-
-		if (full_board & temp_pos) {
-			if (counter != 0) {
-				output += std::to_string(counter);
-				counter = 0;
-			}
-
-			// get the piece
-			const piece_color piece_color{get_color(temp_pos)};
-			const piece_data piece{
-				piece_color == piece_color::WHITE ? white_pieces[piece_lookup[i]] : black_pieces[piece_lookup[i]]
-			};
-
-			constexpr char piece_chars[] = {'P', 'B', 'N', 'R', 'Q', 'K'};
-
-			// dictionary for piece characters
-			char c{piece_chars[static_cast<int>(piece.type)]};
-
-			// if the piece is black, set to lower case
-			if (piece_color == piece_color::BLACK) { c = static_cast<char>(std::tolower(c)); }
-
-			output += c;
-		} else { counter++; }
-	}
-
-	if (counter != 0) { output += std::to_string(counter); }
-
-	return output;
-}
-
-
-void game_data::set(const std::string &fen, const lookup_tables &lookup_table, const between_tables &between_table) {
-	// reset all old data
-	white_board = 0;
-	black_board = 0;
-	white_pieces = {};
-	black_pieces = {};
-	std::fill(piece_lookup.begin(), piece_lookup.end(), 255);
-	// reset all old data
-	white_board = 0;
-	black_board = 0;
-	white_pieces = {};
-	black_pieces = {};
-	std::fill(piece_lookup.begin(), piece_lookup.end(), 255);
-
-	std::array<sb, 12> b_boards{};
-
-	// dictionary for piece characters
-	std::unordered_map<char, int> char_lookup{{'P', 0}, {'B', 1}, {'N', 2}, {'R', 3}, {'Q', 4}, {'K', 5}};
-
-	// loop through fen string
-	int pos{63};
-	for (const char c: fen) {
-		// skip over formatting
-		if (c == '/') { continue; }
-
-		// go through empty positons
-		if (isdigit(c)) {
-			pos -= c - '0';
-			continue;
-		}
-
-		// get the correct board index
-		int board{0};
-		if (std::isupper(c)) { board = 6; }
-		board += char_lookup[static_cast<char>(std::toupper(c))];
-
-		// adds the piece to bit board
-		b_boards[board] |= sb{1} << pos;
-
-		pos--;
-	}
-
-	int white_piece_count{0};
-	int black_piece_count{0};
-
-	// create the piece arrays
-	for (int i{0}; i < 12; i++) {
-		while (b_boards[i]) {
-			// get the index of the piece in the bit board
-			const int b_pos{__builtin_ctzll(b_boards[i])};
-
-			// if i >= 6, this is a white board else black
-			if (i >= 6) {
-				// set color board, color pieces, and piece_lookup
-				white_board |= sb{1} << b_pos;
-				piece_lookup[b_pos] = white_piece_count;
-
-				// king must go last
-				if (i == 11) {
-					piece_lookup[b_pos] = 15;
-					white_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
-					                              piece_color::WHITE, 15);
-					b_boards[i] &= ~(sb{1} << b_pos);
-					continue;
-				}
-
-				white_pieces[white_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i - 6),
-				                                             piece_color::WHITE, white_piece_count);
-				white_piece_count++;
-			} else {
-				// set color board, color pieces, and piece_lookup
-				black_board |= sb{1} << b_pos;
-				piece_lookup[b_pos] = black_piece_count;
-
-				// king must go last
-				if (i == 5) {
-					piece_lookup[b_pos] = 15;
-					black_pieces[15] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
-					                              piece_color::BLACK, 15);
-					b_boards[i] &= ~(sb{1} << b_pos);
-					continue;
-				}
-
-				black_pieces[black_piece_count] = piece_data(sb{1} << b_pos, static_cast<piece_type>(i),
-				                                             piece_color::BLACK, black_piece_count);
-				black_piece_count++;
-			}
-
-			b_boards[i] &= ~(sb{1} << b_pos);
-		}
-	}
-
-	update_attack_boards(lookup_table, between_table);
-
-	update_pins(white_pieces, lookup_table);
-	update_pins(black_pieces, lookup_table);
-}
-
-void game_data::update_pins(auto &piece_set, const auto &table) {
-	// iterate over all arms for the king
-	if (piece_set[15].position != 0) {
-		for (const auto arm: table.queen_table[sb_to_int(piece_set[15].position)]) {
-			// cast out rays
-			auto [fst, snd] = ray_cast_x2(arm, piece_set[15]);
-			// continue of not enough pieces on the arm
-			if (!snd || !fst) { continue; }
-			// check if the piece could be a pinner
-			if (!snd->is_slider || snd->color == piece_set[15].color) { continue; }
-			// if the second rayed piece has attacks along arm towards king
-			if (snd->attacks & arm) {
-				// the first rayed piece is pinned
-				fst->pinner_id = snd->id;
-			}
-		}
-	}
 }

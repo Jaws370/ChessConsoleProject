@@ -58,8 +58,6 @@ struct piece_data {
 			}
 			default: break;
 		}
-
-		// todo somehow set the attacks of all pieces after init
 	}
 
 	piece_data() : position(0), attacks(0), type(piece_type::EMPTY), color(piece_color::NONE), id(255), pinner_id(255),

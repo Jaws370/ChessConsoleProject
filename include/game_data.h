@@ -5,20 +5,13 @@
 #include <string>
 
 class game_data {
+	piece_data *ray_cast_x1(sb arm, const piece_data &piece);
+	std::pair<piece_data *, piece_data *> ray_cast_x2(sb arm, const piece_data &piece);
+
 	sb pawn_logic(const piece_data &piece);
 	sb king_logic(const piece_data &piece, int pos, const lookup_tables &lookup_table);
 	sb slider_logic(const piece_data &piece, const lookup_tables &lookup_table,
 	                const between_tables &between_table);
-
-
-	piece_data *ray_cast_x1(sb arm, const piece_data &piece);
-	std::pair<piece_data *, piece_data *> ray_cast_x2(sb arm, const piece_data &piece);
-
-	static int sb_to_int(const sb board) { return __builtin_ctzll(board); }
-
-	[[nodiscard]] piece_color get_color(sb pos) const;
-	std::pair<sb *, sb *> get_boards(piece_color color);
-	std::pair<std::array<piece_data, 16> *, std::array<piece_data, 16> *> get_pieces(piece_color color);
 
 	void update_attack_boards(const lookup_tables &lookup_table, const between_tables &between_table);
 	void update_pins(auto &piece_set, const auto &table);
@@ -38,8 +31,14 @@ public:
 	[[nodiscard]] std::string get() const;
 	void set(const std::string &fen, const lookup_tables &lookup_table, const between_tables &between_table);
 
+	static int sb_to_int(const sb board) { return __builtin_ctzll(board); }
+
+	[[nodiscard]] piece_color get_color(sb pos) const;
+	[[nodiscard]] std::pair<sb *, sb *> get_boards(piece_color color);
+	[[nodiscard]] std::pair<std::array<piece_data, 16> *, std::array<piece_data, 16> *> get_pieces(piece_color color);
+
 	[[nodiscard]] int evaluate_position() const;
 
-	sb get_valid_moves(int pos, const lookup_tables &lookup_table, const between_tables &between_table);
+	[[nodiscard]] sb get_valid_moves(int pos, const lookup_tables &lookup_table, const between_tables &between_table);
 	void move(int old_pos, int new_pos, const lookup_tables &lookup_table, const between_tables &between_table);
 };
