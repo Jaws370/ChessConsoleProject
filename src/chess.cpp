@@ -1,5 +1,6 @@
 #include "../include/chess.h"
 
+#include <bitset>
 #include <iostream>
 #include <random>
 
@@ -81,10 +82,14 @@ bool chess::check_move(const int old_idx, const int new_idx) {
 
 	// get valid moves and check them against the new position
 	const sb valid_moves = gd.get_valid_moves(old_idx, tables.lookup_table, tables.between_table);
+	std::cout << std::endl << "valid moves: " << std::bitset<64>(valid_moves) << std::endl;
 	const bool is_move_valid = valid_moves & (sb{1} << new_idx);
 
 	// is the move is not valid, then can never be true
 	if (!is_move_valid) { return false; }
+
+	// king can always move to a valid space no matter how many checks (also non-check moves)
+	if (piece.type == piece_type::KING) { return true; }
 
 	// check if the king is under attack
 	if (gd.side_attacks[static_cast<int>(piece_color)] & (*friendly_pieces)[15].position) {
@@ -98,9 +103,6 @@ bool chess::check_move(const int old_idx, const int new_idx) {
 				if (check_count > 1) { break; }
 			}
 		}
-
-		// king can always move to a valid space no matter how many checks (also non-check moves)
-		if (piece.type == piece_type::KING) { return true; }
 
 		// if there are more than two attackers, would've had to be the king
 		if (check_count > 1) { return false; }

@@ -1,5 +1,7 @@
 #include "../include/game_data.h"
 
+#include <bitset>
+#include <iostream>
 #include <span>
 #include <unordered_map>
 
@@ -66,6 +68,9 @@ void game_data::set(const std::string &fen, const lookup_tables &lookup_table, c
 	// loop through fen string
 	int pos{63};
 	for (const char c: fen) {
+		// break at first space
+		if (c == ' ') { break; }
+
 		// skip over formatting
 		if (c == '/') { continue; }
 
@@ -303,6 +308,8 @@ sb game_data::king_logic(const piece_data &piece, const int pos, const lookup_ta
 	// remove own pieces
 	output &= ~*friendly_board;
 
+	std::cout << "friendly board: " << std::bitset<64>(*friendly_board) << std::endl;
+
 	// reminder! pinned pieces are included in attacked pieces, so no need to recheck for them
 
 	return output;
@@ -387,8 +394,8 @@ void game_data::update_attack_boards(const lookup_tables &lookup_table, const be
 		switch (piece.type) {
 			case piece_type::PAWN: {
 				piece.attacks = piece_color == piece_color::WHITE
-					                ? (sb{piece.position} << 7 | sb{piece.position} << 9)
-					                : (sb{piece.position} >> 7 | sb{piece.position} >> 9);
+					                ? (piece.position << 7 | piece.position << 9)
+					                : (piece.position >> 7 | piece.position >> 9);
 				break;
 			}
 			case piece_type::KNIGHT: {
