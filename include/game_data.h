@@ -19,6 +19,7 @@ class game_data {
 public:
 	sb white_board{};
 	sb black_board{};
+	sb en_passant_board{};
 	std::array<uint8_t, 64> piece_lookup{};
 	std::array<piece_data, 16> white_pieces; // the last piece must be king
 	std::array<piece_data, 16> black_pieces; // the last piece must be king
@@ -40,5 +41,5 @@ public:
 	[[nodiscard]] int evaluate_position() const;
 
 	[[nodiscard]] sb get_valid_moves(int pos, const lookup_tables &lookup_table, const between_tables &between_table);
-	void move(int old_pos, int new_pos, const lookup_tables &lookup_table, const between_tables &between_table);
+	void move(int old_idx, int new_idx, const lookup_tables &lookup_table, const between_tables &between_table);
 };

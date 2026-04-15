@@ -266,11 +266,19 @@ sb game_data::pawn_logic(const piece_data &piece) {
 
 	sb temp_board{piece_color == piece_color::WHITE ? piece.position << 8 : piece.position >> 8};
 
-	// check take left (towards the A file with H file mask)
-	if ((*enemy_board & ((temp_board << 1) & ~0x0101010101010101ULL))) { output |= temp_board << 1; }
+	// handle left side
+	constexpr sb left_mask{~0x0101010101010101ULL};
+	// check if en passant or capture valid
+	if ((piece.position << 1 & en_passant_board | temp_board << 1) & *enemy_board & left_mask) {
+		output |= temp_board << 1;
+	}
 
-	// check take right (towards the H file with A file mask)
-	if ((*enemy_board & ((temp_board >> 1) & ~0x8080808080808080ULL))) { output |= temp_board >> 1; }
+	// handle right side
+	constexpr sb right_mask{~0x8080808080808080ULL};
+	// check if en passant or capture valid
+	if ((piece.position >> 1 & en_passant_board | temp_board >> 1) & *enemy_board & right_mask) {
+		output |= temp_board >> 1;
+	}
 
 	// check move forwards
 	if (!(temp_board & (*friendly_board | *enemy_board))) {
@@ -284,7 +292,6 @@ sb game_data::pawn_logic(const piece_data &piece) {
 			                              : piece.position & 0x00FF000000000000ULL;
 
 		const bool is_path_clear{!(temp_board & (*friendly_board | *enemy_board))};
-
 		if (on_starting_rank && is_path_clear) { output |= temp_board; }
 	}
 
@@ -300,6 +307,7 @@ sb game_data::king_logic(const piece_data &piece, const int pos, const lookup_ta
 		                        ? side_attacks[static_cast<int>(piece_color::BLACK)]
 		                        : side_attacks[static_cast<int>(piece_color::WHITE)];
 
+	auto [friendly_pieces, enemy_pieces] = get_pieces(piece.color);
 	auto [friendly_board, enemy_board] = get_boards(piece.color);
 
 	// remove attacked squares from possible moves
@@ -307,6 +315,27 @@ sb game_data::king_logic(const piece_data &piece, const int pos, const lookup_ta
 
 	// remove own pieces
 	output &= ~*friendly_board;
+
+	// if not under check
+	if ((side_attacks[1 - static_cast<int>(piece.color)] & piece.position) == 0) {
+		// creating the castling mask
+		sb castle_mask{piece.color == piece_color::WHITE ? 0x0000000000000076ULL : 0x7600000000000000ULL};
+		castle_mask &= ~(*friendly_board | *enemy_board | side_attacks[1 - static_cast<int>(piece.color)]);
+
+		// if the mask is all less than the king, then no pieces to the left of the king; rook pos not empty
+		if ((castle_mask < piece.position || castle_mask == 0) && *friendly_board & (piece.position << 4)) {
+			// make sure the piece is a friendly, unmoved rook
+			const piece_data &castle_partner = (*friendly_pieces)[piece_lookup[sb_to_int(piece.position << 4)]];
+			if (!castle_partner.has_moved && castle_partner.type == piece_type::ROOK) { output &= piece.position << 2; }
+		}
+
+		// if the mask is all greater than the king, then no pieces to the right of the king; rook pos not empty
+		if ((castle_mask > piece.position || castle_mask == 0) && *friendly_board & (piece.position >> 3)) {
+			// make sure the piece is a friendly, unmoved rook
+			const piece_data &castle_partner = (*friendly_pieces)[piece_lookup[sb_to_int(piece.position >> 3)]];
+			if (!castle_partner.has_moved && castle_partner.type == piece_type::ROOK) { output &= piece.position >> 2; }
+		}
+	}
 
 	// reminder! pinned pieces are included in attacked pieces, so no need to recheck for them
 
@@ -500,12 +529,12 @@ sb game_data::get_valid_moves(const int pos, const lookup_tables &lookup_table, 
 	return output;
 }
 
-void game_data::move(const int old_pos, const int new_pos, const lookup_tables &lookup_table,
+void game_data::move(const int old_idx, const int new_idx, const lookup_tables &lookup_table,
                      const between_tables &between_table) {
 	// get the piece
-	const piece_color piece_color{get_color(sb{1} << old_pos)};
+	const piece_color piece_color{get_color(sb{1} << old_idx)};
 	piece_data *piece{
-		piece_color == piece_color::WHITE ? &white_pieces[piece_lookup[old_pos]] : &black_pieces[piece_lookup[old_pos]]
+		piece_color == piece_color::WHITE ? &white_pieces[piece_lookup[old_idx]] : &black_pieces[piece_lookup[old_idx]]
 	};
 
 	// remove all prev pins if king moves
@@ -523,23 +552,59 @@ void game_data::move(const int old_pos, const int new_pos, const lookup_tables &
 	auto [friendly_board, enemy_board] = get_boards(piece->color);
 
 	// update captured piece
-	if (piece_lookup[new_pos] != 255) {
+	if (piece_lookup[new_idx] != 255) {
 		// get the captured piece (will always be the opposite color)
 		piece_data *captured_piece = piece_color == piece_color::WHITE
-			                             ? &black_pieces[piece_lookup[old_pos]]
-			                             : &white_pieces[piece_lookup[old_pos]];
+			                             ? &black_pieces[piece_lookup[old_idx]]
+			                             : &white_pieces[piece_lookup[old_idx]];
 		*enemy_board &= ~captured_piece->position;
 		captured_piece->reset();
 	}
 
-	// update game_data
-	piece_lookup[old_pos] = 255;
-	piece_lookup[new_pos] = piece->id;
-	*friendly_board &= ~(sb{1} << old_pos);
-	*friendly_board |= sb{1} << new_pos;
+	auto update_data = [&](auto *piece_data, sb new_pos) {
+		// update game data
+		piece_lookup[old_idx] = 255;
+		piece_lookup[new_idx] = piece_data->id;
+		*friendly_board &= ~piece_data->position;
+		*friendly_board |= new_pos;
 
-	// update piece
-	piece->position = sb{1} << new_pos;
+		// update piece data
+		piece_data->position = new_pos;
+		piece_data->has_moved = true;
+	};
+
+	const sb new_pos{sb{1} << new_idx};
+	update_data(piece, new_pos);
+
+	// en passant updates
+	if (piece->type == piece_type::PAWN && abs(new_idx - old_idx) == 16) {
+		// set en passant board to the piece's position
+		en_passant_board = piece->position;
+	} else {
+		// reset the en passant board
+		en_passant_board = 0;
+	}
+
+	// castling updates
+	if (piece->type == piece_type::KING && (lookup_table.king_table[old_idx][0] & new_pos) == 0) {
+		auto [friendly_pieces, enemy_pieces] = get_pieces(piece->color);
+
+		piece_data *castle_partner;
+		sb castle_partner_pos{};
+		if (new_idx > old_idx) {
+			// get the position of the rook and its piece data
+			castle_partner_pos = piece->position << 4;
+			castle_partner = &(*friendly_pieces)[piece_lookup[sb_to_int(castle_partner_pos)]];
+
+			update_data(castle_partner, piece->position << 1);
+		} else {
+			// get the position of the rook and its piece data
+			castle_partner_pos = piece->position >> 3;
+			castle_partner = &(*friendly_pieces)[piece_lookup[sb_to_int(castle_partner_pos)]];
+
+			update_data(castle_partner, piece->position >> 1);
+		}
+	}
 
 	// update attacks
 	update_attack_boards(lookup_table, between_table);

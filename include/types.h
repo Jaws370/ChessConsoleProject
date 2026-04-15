@@ -25,11 +25,12 @@ struct piece_data {
 	uint8_t id; // the position of the piece in the piece arrays
 	uint8_t pinner_id; // the id if the piece pinning this piece... 255 if no pin
 	bool is_slider;
+	bool has_moved;
 	int value;
 
 	piece_data(const uint64_t position, const piece_type type, const piece_color color,
 	           const uint8_t id) : position(position), attacks(0), type(type), color(color), id(id),
-	                               pinner_id(255), is_slider(false), value(0) {
+	                               pinner_id(255), is_slider(false), has_moved(false), value(0) {
 		if (type == piece_type::BISHOP || type == piece_type::ROOK || type == piece_type::QUEEN) { is_slider = true; }
 
 		switch (type) {
