@@ -13,13 +13,14 @@ class chess {
 	piece_color p1_color;
 	piece_color p2_color;
 
-	int minimax(game_data pseudo_gd, int depth, bool is_maximizing, int alpha, int beta);
+	int negamax(game_data pseudo_gd, piece_color color, int depth, int alpha, int beta);
 
 public:
 	explicit chess(const std::string &fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
 
 	sb get_valid_moves(const int pos) { return gd.get_valid_moves(pos, tables.lookup_table, tables.between_table); }
-	bool check_move(int old_idx, int new_idx);
+	bool check_move(const int old_idx, const int new_idx) { return check_move(old_idx, new_idx, gd); };
+	bool check_move(int old_idx, int new_idx, game_data &search_gd) const;
 
 	void ai_move(int depth);
 
