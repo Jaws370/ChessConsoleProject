@@ -3101,6 +3101,322 @@ int main() {
 	}
 	total++;
 
+	// Ensure you have these variables declared in your testing scope:
+	// std::string test_name;
+	// unsigned long long correct_board;
+	// int passed = 0, total = 0;
+	// std::string failed_tests = "";
+
+	// ==========================================
+	// --- EN PASSANT TESTS (1 - 15) ---
+	// ==========================================
+
+	// Test 1: White pawn captures Black pawn En Passant to the right
+	game.set_board("8/4p3/8/K2P4/8/8/8/7k");
+	game.move(51, 35); // Black E7 to E5
+	test_name = "White EP right capture (D5 takes E6)";
+	correct_board = (1ULL << 44) | (1ULL << 43); // D6, E6
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 2: White pawn captures Black pawn En Passant to the left
+	game.set_board("8/2p5/8/K2P4/8/8/8/7k");
+	game.move(53, 37); // Black C7 to C5
+	test_name = "White EP left capture (D5 takes C6)";
+	correct_board = (1ULL << 44) | (1ULL << 45); // D6, C6
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 3: Black pawn captures White pawn En Passant to the right
+	game.set_board("K7/8/8/8/5p2/8/6P1/7k");
+	game.move(9, 25); // White G2 to G4
+	test_name = "Black EP right capture (F4 takes G3)";
+	correct_board = (1ULL << 18) | (1ULL << 17); // F3, G3
+	if (test_valid_moves(game.get_valid_moves(26), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 4: Black pawn captures White pawn En Passant to the left
+	game.set_board("K7/8/8/8/5p2/8/4P3/7k");
+	game.move(11, 27); // White E2 to E4
+	test_name = "Black EP left capture (F4 takes E3)";
+	correct_board = (1ULL << 18) | (1ULL << 19); // F3, E3
+	if (test_valid_moves(game.get_valid_moves(26), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 5: White EP on the H-file edge
+	game.set_board("8/6p1/8/K6P/8/8/8/7k");
+	game.move(49, 33); // Black G7 to G5
+	test_name = "White EP edge file (H5 takes G6)";
+	correct_board = (1ULL << 40) | (1ULL << 41); // H6, G6
+	if (test_valid_moves(game.get_valid_moves(32), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 6: White EP on the A-file edge
+	game.set_board("8/1p6/8/P6K/8/8/8/7k");
+	game.move(54, 38); // Black B7 to B5
+	test_name = "White EP edge file (A5 takes B6)";
+	correct_board = (1ULL << 47) | (1ULL << 46); // A6, B6
+	if (test_valid_moves(game.get_valid_moves(39), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 7: En Passant rights expire immediately after one turn
+	game.set_board("8/4p3/8/K2P4/8/P7/8/7k");
+	game.move(51, 35); // Black E7 to E5
+	game.move(23, 31); // White A3 to A4
+	game.move(0, 8); // Black King H1 to H2
+	test_name = "En Passant rights expire";
+	correct_board = (1ULL << 44); // D6 only
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 8: Absolute pin prevents En Passant capture (exposes King)
+	game.set_board("8/4p3/8/K2P3r/8/8/8/7k");
+	game.move(51, 35); // Black E7 to E5
+	test_name = "Pinned pawn cannot EP capture";
+	correct_board = 0ULL; // No valid moves due to absolute pin by H5 Rook
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 9: En Passant is invalid if pawn only moved 1 square
+	game.set_board("8/8/4p3/K2P4/8/8/8/7k");
+	game.move(43, 35); // Black E6 to E5
+	test_name = "No EP if pawn only moved 1 square";
+	correct_board = (1ULL << 44); // D6 only
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 10: Two friendly pawns can capture the same En Passant target
+	game.set_board("8/3p4/8/2P1P3/8/K7/8/7k");
+	game.move(52, 36); // Black D7 to D5
+	test_name = "Double attacker EP (Testing C5)";
+	correct_board = (1ULL << 45) | (1ULL << 44); // C6, D6
+	if (test_valid_moves(game.get_valid_moves(37), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 11: Black EP on the A-file edge
+	game.set_board("K7/8/8/8/p7/8/1P6/7k");
+	game.move(14, 30); // White B2 to B4
+	test_name = "Black EP edge file (A4 takes B3)";
+	correct_board = (1ULL << 23) | (1ULL << 22); // A3, B3
+	if (test_valid_moves(game.get_valid_moves(31), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 12: Black EP on the H-file edge
+	game.set_board("K7/8/8/8/7p/8/6P1/7k");
+	game.move(9, 25); // White G2 to G4
+	test_name = "Black EP edge file (H4 takes G3)";
+	correct_board = (1ULL << 16) | (1ULL << 17); // H3, G3
+	if (test_valid_moves(game.get_valid_moves(24), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 13: En Passant valid even if destination square blocks friendly movement later
+	game.set_board("8/4p3/8/K2P4/8/8/8/7k");
+	game.move(51, 43); // Black E7 to E6
+	game.move(39, 47); // White A5 to A6
+	game.move(43, 35); // Black E6 to E5
+	test_name = "No EP if broken sequence 1-square pushes";
+	correct_board = (1ULL << 44); // D6 only
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 14: Sequential double moves, only the most recent can be captured En Passant
+	game.set_board("8/2p1p3/8/K2P1P2/8/8/8/7k");
+	game.move(53, 37); // Black C7 to C5
+	game.move(34, 42); // White F5 to F6
+	game.move(51, 35); // Black E7 to E5
+	test_name = "Only immediate double move allows EP";
+	correct_board = (1ULL << 44) | (1ULL << 43); // D6, E6 (No C6!)
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 15: EP capture available alongside a blocked forward movement
+	game.set_board("8/4p3/3p4/K2P4/8/8/8/7k");
+	game.move(51, 35); // Black E7 to E5
+	test_name = "Forward block doesn't stop EP capture";
+	correct_board = (1ULL << 43); // E6 only, D6 is occupied
+	if (test_valid_moves(game.get_valid_moves(36), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+
+	// ==========================================
+	// --- CASTLING TESTS (16 - 30) ---
+	// ==========================================
+
+	// Test 16: Standard White Kingside Valid
+	game.set_board("8/8/8/8/8/8/8/4K2R");
+	test_name = "White Kingside Castling valid";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10) | (1ULL << 1);
+	// Normal King moves + G1
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 17: Standard White Queenside Valid
+	game.set_board("8/8/8/8/8/8/8/R3K3");
+	test_name = "White Queenside Castling valid";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10) | (1ULL << 5); // Normal + C1
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 18: Standard Black Kingside Valid
+	game.set_board("4k2r/8/8/8/8/8/8/8");
+	test_name = "Black Kingside Castling valid";
+	correct_board = (1ULL << 60) | (1ULL << 58) | (1ULL << 52) | (1ULL << 51) | (1ULL << 50) | (1ULL << 57);
+	// Normal + G8
+	if (test_valid_moves(game.get_valid_moves(59), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 19: Standard Black Queenside Valid
+	game.set_board("r3k3/8/8/8/8/8/8/8");
+	test_name = "Black Queenside Castling valid";
+	correct_board = (1ULL << 60) | (1ULL << 58) | (1ULL << 52) | (1ULL << 51) | (1ULL << 50) | (1ULL << 61);
+	// Normal + C8
+	if (test_valid_moves(game.get_valid_moves(59), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 20: White Kingside Castling blocked by piece
+	game.set_board("8/8/8/8/8/8/8/4KB1R");
+	test_name = "White Kingside blocked by Bishop F1";
+	correct_board = (1ULL << 4) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10); // Blocked
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 21: White Queenside Castling blocked by piece
+	game.set_board("8/8/8/8/8/8/8/RN2K3");
+	test_name = "White Queenside blocked by Knight B1";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10); // Blocked
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 22: White Kingside King in check
+	game.set_board("4r3/8/8/8/8/8/8/4K2R");
+	test_name = "White Kingside disabled (King in check)";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 10); // Missing E2 (attacked) and G1
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 23: White Kingside passing through check
+	game.set_board("5r2/8/8/8/8/8/8/4K2R");
+	test_name = "White Kingside disabled (F1 under attack)";
+	correct_board = (1ULL << 4) | (1ULL << 12) | (1ULL << 11); // Missing F1, F2 (attacked) and G1
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 24: White Queenside destination in check
+	game.set_board("2r5/8/8/8/8/8/8/R3K3");
+	test_name = "White Queenside disabled (C1 under attack)";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10); // Missing C1
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 25: King moves and returns, permanently losing castling rights
+	game.set_board("4k2r/8/8/8/8/8/8/K7");
+	game.move(59, 60); // E8 to D8
+	game.move(7, 6); // White dummy move
+	game.move(60, 59); // D8 returns to E8
+	test_name = "King moved and returned, castling dead";
+	correct_board = (1ULL << 60) | (1ULL << 58) | (1ULL << 52) | (1ULL << 51) | (1ULL << 50);
+	if (test_valid_moves(game.get_valid_moves(59), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 26: Rook moves and returns, permanently losing castling rights
+	game.set_board("R3K3/8/8/8/8/8/8/k7");
+	game.move(63, 62); // A8 Rook to B8
+	game.move(7, 6); // Black dummy move
+	game.move(62, 63); // Rook returns to A8
+	test_name = "Rook moved and returned, castling dead";
+	correct_board = (1ULL << 60) | (1ULL << 58) | (1ULL << 52) | (1ULL << 51) | (1ULL << 50);
+	if (test_valid_moves(game.get_valid_moves(59), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 27: Castling fails if Rook is missing entirely
+	game.set_board("8/8/8/8/8/8/8/4K3");
+	test_name = "No castling without a Rook";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10);
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 28: Castling fails if corner piece is not a Rook (Pseudo-castle)
+	game.set_board("8/8/8/8/8/8/8/4K2N");
+	test_name = "No castling with a corner Knight";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10);
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 29: White Queenside passing through check on D-file
+	game.set_board("3q4/8/8/8/8/8/8/R3K3");
+	test_name = "White Queenside disabled (D1 under attack)";
+	correct_board = (1ULL << 2) | (1ULL << 11) | (1ULL << 10);
+	// D1 attacked, D2 attacked by Queen, C1 disallowed
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
+	// Test 30: Castling ALLOWED if the Rook itself is under attack (Standard Chess Rule)
+	game.set_board("7r/8/8/8/8/8/8/4K2R");
+	test_name = "White Kingside allowed even if Rook H1 is under attack";
+	correct_board = (1ULL << 4) | (1ULL << 2) | (1ULL << 12) | (1ULL << 11) | (1ULL << 10) | (1ULL << 1);
+	if (test_valid_moves(game.get_valid_moves(3), correct_board, test_name)) { passed++; } else {
+		failed_tests += test_name + "\n";
+	}
+	total++;
+
 	std::cout << "Passed: " << passed << "/" << total << std::endl;
 	std::cout << std::endl;
 	std::cout << "Failed:\n" << failed_tests << std::endl;

@@ -316,24 +316,33 @@ sb game_data::king_logic(const piece_data &piece, const int pos, const lookup_ta
 	// remove own pieces
 	output &= ~*friendly_board;
 
-	// if not under check
-	if ((side_attacks[1 - static_cast<int>(piece.color)] & piece.position) == 0) {
-		// creating the castling mask
-		sb castle_mask{piece.color == piece_color::WHITE ? 0x0000000000000076ULL : 0x7600000000000000ULL};
-		castle_mask &= ~(*friendly_board | *enemy_board | side_attacks[1 - static_cast<int>(piece.color)]);
+	// if king hasn't moved and not under check
+	if (!piece.has_moved && (side_attacks[1 - static_cast<int>(piece.color)] & piece.position) == 0) {
+		const sb occupied = *friendly_board | *enemy_board;
+
+		const sb queenside_path_mask{0x3000000000000000ULL >> (56 * static_cast<int>(piece.color))};
+		const sb queenside_occupancy_mask{0x7000000000000000ULL >> (56 * static_cast<int>(piece.color))};
+
+		const bool is_queenside_clear(((queenside_occupancy_mask & occupied)
+		                               | (queenside_path_mask & side_attacks[1 - static_cast<int>(piece.color)])) == 0);
 
 		// if the mask is all less than the king, then no pieces to the left of the king; rook pos not empty
-		if ((castle_mask < piece.position || castle_mask == 0) && *friendly_board & (piece.position << 4)) {
+		if (is_queenside_clear && *friendly_board & (piece.position << 4)) {
 			// make sure the piece is a friendly, unmoved rook
 			const piece_data &castle_partner = (*friendly_pieces)[piece_lookup[sb_to_int(piece.position << 4)]];
-			if (!castle_partner.has_moved && castle_partner.type == piece_type::ROOK) { output &= piece.position << 2; }
+			if (!castle_partner.has_moved && castle_partner.type == piece_type::ROOK) { output |= piece.position << 2; }
 		}
 
+		const sb kingside_mask{0x0600000000000000ULL >> (56 * static_cast<int>(piece.color))};
+
+		const bool is_kingside_clear(
+			(kingside_mask & (occupied | side_attacks[1 - static_cast<int>(piece.color)])) == 0);
+
 		// if the mask is all greater than the king, then no pieces to the right of the king; rook pos not empty
-		if ((castle_mask > piece.position || castle_mask == 0) && *friendly_board & (piece.position >> 3)) {
+		if (is_kingside_clear && *friendly_board & (piece.position >> 3)) {
 			// make sure the piece is a friendly, unmoved rook
 			const piece_data &castle_partner = (*friendly_pieces)[piece_lookup[sb_to_int(piece.position >> 3)]];
-			if (!castle_partner.has_moved && castle_partner.type == piece_type::ROOK) { output &= piece.position >> 2; }
+			if (!castle_partner.has_moved && castle_partner.type == piece_type::ROOK) { output |= piece.position >> 2; }
 		}
 	}
 
