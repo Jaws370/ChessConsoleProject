@@ -153,6 +153,12 @@ piece_color game_data::get_color(const sb pos) const {
 	return piece_color::NONE;
 }
 
+piece_data *game_data::get_piece(const int pos) {
+	if (sb{1} << pos & white_board) { return &white_pieces[piece_lookup[sb_to_int(pos)]]; }
+	if (sb{1} << pos & black_board) { return &black_pieces[piece_lookup[sb_to_int(pos)]]; }
+	return nullptr;
+}
+
 std::pair<sb *, sb *> game_data::get_boards(const piece_color color) {
 	return color == piece_color::WHITE
 		       ? std::pair{&white_board, &black_board}
@@ -385,7 +391,7 @@ sb game_data::slider_logic(const piece_data &piece, const lookup_tables &lookup_
 		const piece_data hit = *hit_ptr;
 		// create the possible move set as being the moves between the two positions (first removed, last sometimes)
 		output |= between_table[sb_to_int(piece.position)][sb_to_int(hit.position)] & ~(
-			piece.position | (piece.color == hit.color ? hit.position : 0x0ULL));
+			piece.position | (piece.color == hit.color ? hit.position : sb{0}));
 	}
 
 	return output;
@@ -467,15 +473,15 @@ void game_data::update_pins(auto &piece_set, const auto &table) {
 	if (piece_set[15].position != 0) {
 		for (const auto arm: table.queen_table[sb_to_int(piece_set[15].position)]) {
 			// cast out rays
-			auto [fst, snd] = ray_cast_x2(arm, piece_set[15]);
+			auto [first, second] = ray_cast_x2(arm, piece_set[15]);
 			// continue of not enough pieces on the arm
-			if (!snd || !fst) { continue; }
+			if (!second || !first) { continue; }
 			// check if the piece could be a pinner
-			if (!snd->is_slider || snd->color == piece_set[15].color) { continue; }
+			if (!second->is_slider || second->color == piece_set[15].color) { continue; }
 			// if the second rayed piece has attacks along arm towards king
-			if (snd->attacks & arm) {
+			if (second->attacks & arm) {
 				// the first rayed piece is pinned
-				fst->pinner_id = snd->id;
+				first->pinner_id = second->id;
 			}
 		}
 	}

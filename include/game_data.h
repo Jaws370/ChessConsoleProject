@@ -35,6 +35,7 @@ public:
 	static int sb_to_int(const sb board) { return __builtin_ctzll(board); }
 
 	[[nodiscard]] piece_color get_color(sb pos) const;
+	[[nodiscard]] piece_data *get_piece(int pos);
 	[[nodiscard]] std::pair<sb *, sb *> get_boards(piece_color color);
 	[[nodiscard]] std::pair<std::array<piece_data, 16> *, std::array<piece_data, 16> *> get_pieces(piece_color color);
 
